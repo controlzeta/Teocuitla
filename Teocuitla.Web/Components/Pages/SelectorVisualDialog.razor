@@ -1,0 +1,170 @@
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex flex-column gap-3" style="min-height: 80vh;">
+            
+            <!-- PANEL DE CONTROL SUPERIOR -->
+            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudGrid Spacing="2" Class="align-center">
+                    <MudItem xs="12" sm="7">
+                        <MudTextField @bind-Value="_testUrl" 
+                                      Label="URL de Prueba del Producto" 
+                                      Placeholder="Pega un enlace del producto para extraer sus selectores..."
+                                      Variant="Variant.Outlined" 
+                                      Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="5" Class="d-flex gap-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudDownload" OnClick="CargarPaginaProxy" FullWidth="true">
+                            Cargar Vista
+                        </MudButton>
+                        @if (_loadingPage)
+                        {
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Small" />
+                        }
+                    </MudItem>
+                </MudGrid>
+
+                @if (!string.IsNullOrEmpty(_capturedSelector))
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Text" Class="mt-3 pa-2" Dense="true" Style="border: 1px solid var(--mud-palette-success);">
+                        <div class="d-flex flex-column gap-1">
+                            <MudText Typo="Typo.subtitle2" Class="font-bold">¡Elemento Capturado!</MudText>
+                            <MudText Typo="Typo.body2"><strong>Texto extraído:</strong> "@_capturedText"</MudText>
+                            
+                            <!-- Opción de selector a devolver -->
+                            <MudRadioGroup T="string" @bind-Value="_selectedOption" Class="d-flex gap-4 mt-1">
+                                <MudRadio Value="@("xpath")" Color="Color.Primary" Dense="true">Usar XPath</MudRadio>
+                                <MudRadio Value="@("css")" Color="Color.Primary" Dense="true">Usar CSS</MudRadio>
+                            </MudRadioGroup>
+                            
+                            <MudText Typo="Typo.caption" Class="text-muted font-mono mt-1 break-all">
+                                <strong>Selector:</strong> @(_selectedOption == "xpath" ? _capturedXpath : _capturedCss)
+                            </MudText>
+                        </div>
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="mt-3 pa-2" Dense="true">
+                        Instrucciones: Carga la página de prueba, luego <strong>toca/haz clic directamente sobre el elemento</strong> (ej. el precio) dentro del navegador inferior para capturar su selector.
+                    </MudAlert>
+                }
+            </MudPaper>
+
+            <!-- VISTA DEL NAVEGADOR EMPOTRADO (IFRAME) -->
+            <div class="flex-grow-1 border border-solid mud-border-default rounded overflow-hidden relative" style="background: #ffffff; min-height: 50vh;">
+                @if (string.IsNullOrEmpty(_proxyUrl))
+                {
+                    <div class="d-flex flex-column align-center justify-center h-100 py-12 text-center" style="background: var(--mud-palette-background);">
+                        <MudIcon Icon="@Icons.Material.Filled.Web" Size="Size.Large" Color="Color.Default" Class="mb-3" />
+                        <MudText Typo="Typo.body2" Class="text-muted">Introduce una URL de prueba arriba y presiona "Cargar Vista".</MudText>
+                    </div>
+                }
+                else
+                {
+                    <iframe src="@_proxyUrl" 
+                            style="width: 100%; height: 100%; border: none; min-height: 50vh;" 
+                            @onload="OnIframeLoaded">
+                    </iframe>
+                }
+            </div>
+
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" Disabled="@(string.IsNullOrEmpty(_capturedSelector))" OnClick="ConfirmSelection">
+            Confirmar Selección
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] 
+    public string InitialUrl { get; set; } = string.Empty;
+
+    private string _testUrl = string.Empty;
+    private string _proxyUrl = string.Empty;
+    private bool _loadingPage = false;
+    
+    // Datos de captura
+    private string _capturedXpath = string.Empty;
+    private string _capturedCss = string.Empty;
+    private string _capturedText = string.Empty;
+    private string _capturedSelector = string.Empty;
+    private string _selectedOption = "xpath"; // Por defecto XPath
+
+    private DotNetObjectReference<SelectorVisualDialog>? _objRef;
+
+    protected override void OnInitialized()
+    {
+        _testUrl = InitialUrl;
+        _objRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _objRef != null)
+        {
+            // Registrar el escuchador de postMessage en JS
+            await JS.InvokeVoidAsync("teocuitlaRegisterMessageListener", _objRef);
+        }
+    }
+
+    private void CargarPaginaProxy()
+    {
+        if (string.IsNullOrWhiteSpace(_testUrl))
+        {
+            Snackbar.Add("Por favor ingresa una URL válida.", Severity.Warning);
+            return;
+        }
+
+        _loadingPage = true;
+        _capturedSelector = string.Empty;
+        
+        // Apuntar el iframe a nuestro ProxyController
+        _proxyUrl = $"/api/proxy?url={Uri.EscapeDataString(_testUrl)}";
+        StateHasChanged();
+    }
+
+    private void OnIframeLoaded()
+    {
+        _loadingPage = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnSelectorSelected(string xpath, string css, string text)
+    {
+        _capturedXpath = xpath;
+        _capturedCss = css;
+        _capturedText = text;
+        
+        // Actualizar selector capturado
+        _capturedSelector = _selectedOption == "xpath" ? _capturedXpath : _capturedCss;
+        
+        Snackbar.Add($"Elemento capturado: \"{text}\"", Severity.Success);
+        StateHasChanged();
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void ConfirmSelection()
+    {
+        var finalSelector = _selectedOption == "xpath" ? _capturedXpath : _capturedCss;
+        MudDialog.Close(DialogResult.Ok(finalSelector));
+    }
+
+    public void Dispose()
+    {
+        // Desregistrar el escuchador global para evitar fugas de memoria
+        _ = JS.InvokeVoidAsync("teocuitlaUnregisterMessageListener");
+        _objRef?.Dispose();
+    }
+}

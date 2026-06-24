@@ -1,0 +1,545 @@
+@page "/catalogo"
+@rendermode InteractiveServer
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<PageTitle>Catálogo de Productos - Teocuitla</PageTitle>
+
+<MudGrid>
+    <!-- LISTA DE PRODUCTOS: Se oculta en móviles si hay un producto seleccionado para optimizar espacio (Mobile-First) -->
+    <MudItem xs="12" md="5" Class="@(_showDetails ? "mobile-hide-list" : "d-block")">
+        <div class="d-flex align-center justify-space-between mb-4">
+            <div>
+                <MudText Typo="Typo.h5" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Catálogo</MudText>
+                <MudText Typo="Typo.caption" Class="text-muted">Lista general de productos monitoreados.</MudText>
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="OpenAddProductoDialog">
+                Nuevo
+            </MudButton>
+        </div>
+
+        <!-- Buscador -->
+        <MudTextField Value="_searchQuery" 
+                      Placeholder="Buscar producto..." 
+                      Adornment="Adornment.Start" 
+                      AdornmentIcon="@Icons.Material.Filled.Search" 
+                      Class="mb-4"
+                      Immediate="true"
+                      ValueChanged="@(async (string s) => await OnSearchChanged(s))"
+                      Variant="Variant.Outlined" 
+                      Margin="Margin.Dense" />
+
+        @if (_loadingProductos)
+        {
+            <div class="d-flex justify-center my-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </div>
+        }
+        else if (_productos.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudText Typo="Typo.body2" Class="text-muted">No se encontraron productos.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <MudList T="ProductoMaestro" SelectedValue="_selectedProducto" SelectedValueChanged="OnProductoSelected" Color="Color.Primary" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface); padding: 0;">
+                @foreach (var prod in _productos)
+                {
+                    <MudListItem Value="prod" Class="border-b border-solid mud-border-default py-3">
+                        <div class="d-flex align-center justify-space-between w-100">
+                            <div>
+                                <MudText Typo="Typo.subtitle1" Class="font-bold">@prod.Nombre</MudText>
+                                <div class="d-flex align-center gap-2">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">@prod.Marca</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">@prod.Categoria</MudChip>
+                                </div>
+                            </div>
+                            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Default" />
+                        </div>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    </MudItem>
+
+    <!-- DETALLE DEL PRODUCTO SELECCIONADO -->
+    <MudItem xs="12" md="7" Class="@(!_showDetails ? "mobile-hide-details" : "d-block")">
+        @if (_selectedProducto == null)
+        {
+            <div class="d-flex flex-column align-center justify-center h-100 text-center py-12 border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface); min-height: 400px;">
+                <MudIcon Icon="@Icons.Material.Filled.ShoppingBag" Size="Size.Large" Color="Color.Default" Class="mb-4" Style="font-size: 3rem;" />
+                <MudText Typo="Typo.h6" Class="font-bold">Selecciona un producto</MudText>
+                <MudText Typo="Typo.body2" Class="text-muted max-w-xs">Elige un producto de la lista para ver su comparativa de precios, histórico y enlaces comerciales.</MudText>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-4 h-100">
+                <!-- Encabezado Detalle -->
+                <div class="d-flex align-center gap-2">
+                    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Default" OnClick="RegresarALista" Class="mr-2 d-md-none" />
+                    <div>
+                        <MudText Typo="Typo.h5" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">@_selectedProducto.Nombre</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">@_selectedProducto.Marca • @_selectedProducto.Categoria</MudText>
+                    </div>
+                    <MudSpacer />
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                        <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="OpenAddVarianteDialog">Agregar Variante</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="DeleteSelectedProducto">Eliminar Producto</MudMenuItem>
+                    </MudMenu>
+                </div>
+
+                <!-- CARDS DE VARIANTES (SITIOS COMPARADOS) -->
+                <MudText Typo="Typo.subtitle2" Class="font-bold mt-2" Style="font-family: 'Outfit', sans-serif;">Precios Actuales por Tienda</MudText>
+                @if (_variantes.Count == 0)
+                {
+                    <MudPaper Outlined="true" Class="pa-6 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                        <MudText Typo="Typo.body2" Class="text-muted mb-4">Este producto no tiene enlaces comerciales registrados.</MudText>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="OpenAddVarianteDialog">
+                            Vincular Tienda / Enlace
+                        </MudButton>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudGrid Spacing="2">
+                        @foreach (var v in _variantes)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudCard Outlined="true" Class="border border-solid mud-border-default h-100" Style="background: var(--mud-palette-surface);">
+                                    <MudCardHeader Class="py-2 px-3">
+                                        <CardHeaderContent>
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold">@(v.CatalogoSitio?.Nombre ?? "Tienda")</MudText>
+                                            <MudText Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 180px;">SKU: @v.Sku</MudText>
+                                        </CardHeaderContent>
+                                        <CardHeaderActions>
+                                            @if (v.EnStock)
+                                            {
+                                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Stock</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Agotado</MudChip>
+                                            }
+                                        </CardHeaderActions>
+                                    </MudCardHeader>
+                                    <MudCardContent Class="py-2 px-3">
+                                        <div class="d-flex align-end justify-space-between">
+                                            <div>
+                                                <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Actual</MudText>
+                                                <MudText Typo="Typo.h5" Class="font-bold text-primary">
+                                                    @(v.PrecioActual.HasValue ? $"${v.PrecioActual:F2}" : "Sin datos")
+                                                </MudText>
+                                            </div>
+                                            @if (v.PrecioActual.HasValue && v.PrecioAnterior.HasValue)
+                                            {
+                                                var diff = v.PrecioActual.Value - v.PrecioAnterior.Value;
+                                                <div class="text-right">
+                                                    @if (diff < 0)
+                                                    {
+                                                        <span class="mud-text-success font-bold d-flex align-center gap-1">
+                                                            <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" /> @($"${Math.Abs(diff):F2}")
+                                                        </span>
+                                                    }
+                                                    else if (diff > 0)
+                                                    {
+                                                        <span class="mud-text-error font-bold d-flex align-center gap-1">
+                                                            <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" /> @($"${diff:F2}")
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">Sin cambio</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </MudCardContent>
+                                    <MudCardActions Class="py-1 px-3 border-t border-solid mud-border-default justify-space-between">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Size="Size.Small" Color="Color.Primary" Href="@v.UrlProducto" Target="_blank" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteVariante(v))" />
+                                    </MudCardActions>
+                                </MudCard>
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                    <!-- GRÁFICA DE HISTORIAL DE PRECIOS -->
+                    <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default mt-4" Style="background: var(--mud-palette-surface);">
+                        <MudText Typo="Typo.subtitle2" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Evolución de Precios</MudText>
+                        
+                        @if (_chartSeries.Count == 0)
+                        {
+                            <div class="d-flex justify-center align-center py-12">
+                                <MudText Typo="Typo.body2" Class="text-muted">Capturando historial de precios... Gráfica disponible al registrar capturas.</MudText>
+                            </div>
+                        }
+                        else
+                        {
+                            <MudChart ChartType="ChartType.Line" 
+                                      ChartSeries="@_chartSeries" 
+                                      XAxisLabels="@_chartLabels" 
+                                      Width="100%" 
+                                      Height="280px" 
+                                      ChartOptions="@_chartOptions" />
+                        }
+                    </MudPaper>
+                }
+            </div>
+        }
+    </MudItem>
+</MudGrid>
+
+<!-- DIALOG INLINE PARA AGREGAR PRODUCTO -->
+<MudDialog @bind-Visible="_addProductoOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-bold">Nuevo Producto Maestro</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_productForm" @bind-IsValid="_productFormIsValid">
+            <div class="d-flex flex-column gap-3">
+                <MudTextField @bind-Value="_newProducto.Nombre" Label="Nombre del Producto" Required="true" RequiredError="El nombre es obligatorio" Variant="Variant.Outlined" />
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_newProducto.Marca" Label="Marca" Required="true" RequiredError="La marca es obligatoria" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_newProducto.Categoria" Label="Categoría" Required="true" RequiredError="La categoría es obligatoria" Variant="Variant.Outlined" />
+                    </MudItem>
+                </MudGrid>
+                <MudTextField @bind-Value="_newProducto.Descripcion" Label="Descripción" Lines="3" Variant="Variant.Outlined" />
+            </div>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="(() => _addProductoOpen = false)">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(!_productFormIsValid)" OnClick="SaveNewProducto">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- DIALOG INLINE PARA AGREGAR ENLACE/VARIANTE -->
+<MudDialog @bind-Visible="_addVarianteOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-bold">Vincular Tienda / Variante</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_varianteForm" @bind-IsValid="_varianteFormIsValid">
+            <div class="d-flex flex-column gap-3">
+                <MudSelect T="int" @bind-Value="_newVariante.CatalogoSitioId" Label="Tienda / Sitio" Required="true" Variant="Variant.Outlined">
+                    @foreach (var s in _sitios)
+                    {
+                        <MudSelectItem Value="@s.Id">@s.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="_newVariante.Nombre" Label="Nombre de la Variante (específico)" Required="true" RequiredError="El nombre es obligatorio" Variant="Variant.Outlined" />
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_newVariante.Sku" Label="SKU o Código de Artículo" Required="true" RequiredError="El SKU es obligatorio" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudNumericField @bind-Value="_newVariante.PrecioActual" Label="Precio Inicial (Opcional)" Variant="Variant.Outlined" HideSpinButtons="true" />
+                    </MudItem>
+                </MudGrid>
+                <MudTextField @bind-Value="_newVariante.UrlProducto" Label="URL del Producto" Required="true" RequiredError="La URL es obligatoria" Variant="Variant.Outlined" />
+            </div>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="(() => _addVarianteOpen = false)">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(!_varianteFormIsValid)" OnClick="SaveNewVariante">Vincular</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<ProductoMaestro> _productos = new();
+    private List<CatalogoSitio> _sitios = new();
+    private bool _loadingProductos = true;
+    private string _searchQuery = string.Empty;
+    
+    private ProductoMaestro? _selectedProducto;
+    private List<VarianteComercial> _variantes = new();
+    private bool _showDetails = false;
+
+    // Gráfica
+    private List<ChartSeries<double>> _chartSeries = new();
+    private string[] _chartLabels = Array.Empty<string>();
+    private readonly ChartOptions _chartOptions = new() { ShowLegend = true };
+
+    // Formularios e Inlines
+    private bool _addProductoOpen = false;
+    private ProductoMaestro _newProducto = new();
+    private MudForm _productForm = null!;
+    private bool _productFormIsValid;
+
+    private bool _addVarianteOpen = false;
+    private VarianteComercial _newVariante = new();
+    private MudForm _varianteForm = null!;
+    private bool _varianteFormIsValid;
+
+    private readonly DialogOptions _dialogOptions = new() { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProductos();
+        await LoadSitios();
+    }
+
+    private async Task LoadProductos()
+    {
+        _loadingProductos = true;
+        using var context = await DbFactory.CreateDbContextAsync();
+        
+        IQueryable<ProductoMaestro> query = context.ProductosMaestros;
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            query = query.Where(p => p.Nombre.Contains(_searchQuery) || p.Marca.Contains(_searchQuery));
+        }
+
+        _productos = await query.OrderBy(p => p.Nombre).ToListAsync();
+        _loadingProductos = false;
+    }
+
+    private async Task LoadSitios()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        _sitios = await context.CatalogoSitios.Where(s => s.Activo).OrderBy(s => s.Nombre).ToListAsync();
+    }
+
+    private async Task OnSearchChanged(string query)
+    {
+        _searchQuery = query;
+        await LoadProductos();
+    }
+
+    private async Task OnProductoSelected(ProductoMaestro prod)
+    {
+        _selectedProducto = prod;
+        _showDetails = true;
+        if (_selectedProducto != null)
+        {
+            await LoadProductoDetalle();
+        }
+    }
+
+    private async Task LoadProductoDetalle()
+    {
+        if (_selectedProducto == null) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        _variantes = await context.VariantesComerciales
+            .Include(v => v.CatalogoSitio)
+            .Where(v => v.ProductoMaestroId == _selectedProducto.Id)
+            .ToListAsync();
+
+        await LoadChartData(context);
+    }
+
+    private async Task LoadChartData(TeocuitlaDbContext context)
+    {
+        _chartSeries.Clear();
+        _chartLabels = Array.Empty<string>();
+
+        // Obtener historial de los últimos 7 registros para las variantes de este producto
+        var varianteIds = _variantes.Select(v => v.Id).ToList();
+        if (varianteIds.Count == 0) return;
+
+        var historial = await context.HistorialPrecios
+            .Where(h => varianteIds.Contains(h.VarianteComercialId))
+            .OrderBy(h => h.FechaCaptura)
+            .ToListAsync();
+
+        if (historial.Count == 0)
+        {
+            // Intentar rellenar con el precio actual si no hay histórico aún para graficar un punto de partida
+            foreach (var v in _variantes.Where(v => v.PrecioActual.HasValue))
+            {
+                _chartSeries.Add(new ChartSeries<double>
+                {
+                    Name = v.CatalogoSitio?.Nombre ?? "Tienda",
+                    Data = new double[] { (double)v.PrecioActual!.Value }
+                });
+            }
+            _chartLabels = new string[] { DateTime.Today.ToString("dd/MM") };
+            return;
+        }
+
+        // Obtener un conjunto único de fechas para las etiquetas del eje X (últimos 7 días o capturas)
+        var fechasUnicas = historial
+            .Select(h => h.FechaCaptura.ToString("dd/MM HH:mm"))
+            .Distinct()
+            .TakeLast(7)
+            .ToArray();
+
+        _chartLabels = fechasUnicas;
+
+        foreach (var v in _variantes)
+        {
+            var historialVariante = historial
+                .Where(h => h.VarianteComercialId == v.Id)
+                .OrderBy(h => h.FechaCaptura)
+                .TakeLast(7)
+                .ToList();
+
+            if (historialVariante.Count == 0 && v.PrecioActual.HasValue)
+            {
+                // Si no hay histórico, poner el actual
+                var mockData = new double[fechasUnicas.Length];
+                Array.Fill(mockData, (double)v.PrecioActual.Value);
+                _chartSeries.Add(new ChartSeries<double> { Name = v.CatalogoSitio?.Nombre ?? "Tienda", Data = mockData });
+                continue;
+            }
+
+            var dataPoints = new List<double>();
+            foreach (var label in fechasUnicas)
+            {
+                // Buscar el precio más cercano a esa fecha
+                var punto = historialVariante.FirstOrDefault(h => h.FechaCaptura.ToString("dd/MM HH:mm") == label);
+                if (punto != null)
+                {
+                    dataPoints.Add((double)punto.Precio);
+                }
+                else
+                {
+                    // Si no hay datos en esa fecha exacta, usar el último precio conocido o 0
+                    dataPoints.Add(dataPoints.Count > 0 ? dataPoints.Last() : (double)(v.PrecioActual ?? 0));
+                }
+            }
+
+            _chartSeries.Add(new ChartSeries<double>
+            {
+                Name = v.CatalogoSitio?.Nombre ?? "Tienda",
+                Data = dataPoints.ToArray()
+            });
+        }
+    }
+
+    private void RegresarALista()
+    {
+        _selectedProducto = null;
+        _showDetails = false;
+    }
+
+    private void OpenAddProductoDialog()
+    {
+        _newProducto = new ProductoMaestro();
+        _addProductoOpen = true;
+    }
+
+    private async Task SaveNewProducto()
+    {
+        await _productForm.Validate();
+        if (!_productFormIsValid) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        context.ProductosMaestros.Add(_newProducto);
+        await context.SaveChangesAsync();
+
+        Snackbar.Add($"Producto '{_newProducto.Nombre}' creado.", Severity.Success);
+        _addProductoOpen = false;
+        await LoadProductos();
+    }
+
+    private async Task DeleteSelectedProducto()
+    {
+        if (_selectedProducto == null) return;
+
+        bool confirm = await JS.InvokeAsync<bool>("confirm", 
+            $"¿Está seguro de eliminar '{_selectedProducto.Nombre}' y todos sus enlaces asociados?");
+
+        if (confirm)
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            context.ProductosMaestros.Remove(_selectedProducto);
+            await context.SaveChangesAsync();
+
+            Snackbar.Add("Producto eliminado.", Severity.Success);
+            _selectedProducto = null;
+            _showDetails = false;
+            await LoadProductos();
+        }
+    }
+
+    private void OpenAddVarianteDialog()
+    {
+        if (_sitios.Count == 0)
+        {
+            Snackbar.Add("Primero debes configurar y activar al menos un Sitio en el panel de Sitios.", Severity.Warning);
+            return;
+        }
+
+        _newVariante = new VarianteComercial
+        {
+            ProductoMaestroId = _selectedProducto?.Id ?? 0,
+            CatalogoSitioId = _sitios.First().Id
+        };
+        _addVarianteOpen = true;
+    }
+
+    private async Task SaveNewVariante()
+    {
+        await _varianteForm.Validate();
+        if (!_varianteFormIsValid) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        context.VariantesComerciales.Add(_newVariante);
+        await context.SaveChangesAsync();
+
+        // Si se ingresó un precio inicial, crear registro en el historial de forma automática
+        if (_newVariante.PrecioActual.HasValue)
+        {
+            var hist = new HistorialPrecio
+            {
+                VarianteComercialId = _newVariante.Id,
+                Precio = _newVariante.PrecioActual.Value,
+                EnStock = _newVariante.EnStock,
+                FechaCaptura = DateTime.UtcNow
+            };
+            context.HistorialPrecios.Add(hist);
+            await context.SaveChangesAsync();
+        }
+
+        Snackbar.Add("Enlace comercial vinculado con éxito.", Severity.Success);
+        _addVarianteOpen = false;
+        await LoadProductoDetalle();
+    }
+
+    private async Task DeleteVariante(VarianteComercial variante)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", 
+            $"¿Eliminar el enlace de {variante.CatalogoSitio?.Nombre ?? "esta tienda"}?");
+
+        if (confirm)
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            context.VariantesComerciales.Remove(variante);
+            await context.SaveChangesAsync();
+
+            Snackbar.Add("Enlace eliminado.", Severity.Success);
+            await LoadProductoDetalle();
+        }
+    }
+}
+
+<style>
+    .mud-list-item-icon {
+        min-width: 36px;
+    }
+    .truncate-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* Estilos responsivos de navegación pure CSS */
+    @@media (max-width: 959px) {
+        .mobile-hide-list {
+            display: none !important;
+        }
+        .mobile-hide-details {
+            display: none !important;
+        }
+    }
+</style>

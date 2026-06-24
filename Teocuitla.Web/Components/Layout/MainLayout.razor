@@ -1,0 +1,80 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
+<MudPopoverProvider />
+<MudDialogProvider FullWidth="true" MaxWidth="MaxWidth.Small" CloseButton="true" />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Color="Color.Inherit" Class="border-b border-solid mud-border-default">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Typo="Typo.h6" Class="ml-3 font-bold" Style="font-family: 'Outfit', sans-serif;">TEOCUITLA</MudText>
+        <MudSpacer />
+        <MudToggleIconButton @bind-Toggled="@_isDarkMode"
+                             Icon="@Icons.Material.Filled.LightMode" Color="Color.Warning"
+                             ToggledIcon="@Icons.Material.Filled.DarkMode" ToggledColor="Color.Info" />
+    </MudAppBar>
+    
+    <MudDrawer @bind-Open="@_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="@DrawerVariant.Responsive" Class="border-r border-solid mud-border-default">
+        <MudNavMenu>
+            <MudText Typo="Typo.subtitle2" Class="px-4 pt-3 pb-2 text-muted font-bold" Style="font-family: 'Outfit', sans-serif;">MONITOR</MudText>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Panel General</MudNavLink>
+            <MudNavLink Href="/catalogo" Icon="@Icons.Material.Filled.ShoppingBag">Catálogo</MudNavLink>
+            <MudNavLink Href="/sitios" Icon="@Icons.Material.Filled.SettingsInputComponent">Configuración Sitios</MudNavLink>
+            <MudNavLink Href="/proxies" Icon="@Icons.Material.Filled.VpnLock">Registro Proxies</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent Class="mud-background-gray">
+        <MudContainer MaxWidth="MaxWidth.Large" Class="my-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = true; // Por defecto modo oscuro AMOLED
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private readonly MudTheme _theme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#3F51B5",       // Indigo
+            Secondary = "#009688",     // Teal
+            AppbarBackground = "#FFFFFF",
+            Background = "#F5F5F7",
+            Surface = "#FFFFFF",
+            DrawerBackground = "#FFFFFF",
+            TextPrimary = "#1C1C1E",
+            TextSecondary = "#8E8E93",
+            Divider = "#E5E5EA",
+            TableLines = "#E5E5EA",
+            LinesDefault = "#E5E5EA"
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#7986CB",       // Indigo suave
+            Secondary = "#4DB6AC",     // Teal suave
+            AppbarBackground = "#000000",
+            Background = "#000000",       // AMOLED Negro Puro
+            Surface = "#0F0F12",          // Gris sumamente oscuro para tarjetas (Flat)
+            DrawerBackground = "#000000", // Drawer en negro puro
+            TextPrimary = "#F2F2F7",
+            TextSecondary = "#AEAEB2",
+            Divider = "#1C1C1E",
+            TableLines = "#1C1C1E",
+            LinesDefault = "#1C1C1E",
+            ActionDefault = "#AEAEB2"
+        },
+        LayoutProperties = new LayoutProperties()
+        {
+            DefaultBorderRadius = "8px"
+        }
+    };
+}

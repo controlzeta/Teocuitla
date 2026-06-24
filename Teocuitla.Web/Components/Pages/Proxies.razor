@@ -1,0 +1,237 @@
+@page "/proxies"
+@rendermode InteractiveServer
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<PageTitle>Registro de Proxies - Teocuitla</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-6">
+    <div>
+        <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Registro de Proxies IP</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted">Administra los servidores proxy utilizados para rotación IP y evasión de sistemas antibots.</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddProxyDialog">
+        Registrar Proxy
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-center my-12">
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+    </div>
+}
+else if (_proxies.Count == 0)
+{
+    <MudPaper Class="d-flex flex-column align-center justify-center p-12 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface); min-height: 300px;">
+        <MudIcon Icon="@Icons.Material.Filled.VpnLock" Size="Size.Large" Color="Color.Primary" Class="mb-4" Style="font-size: 3rem;" />
+        <MudText Typo="Typo.h6" Class="font-bold mb-2">Sin proxies registrados</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted max-w-md mb-6">
+            Registra servidores proxy (SOCKS5 o HTTP) para permitir que el motor de rastreo rote su dirección IP pública y reduzca la tasa de bloqueos.
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddProxyDialog">
+            Registrar primer proxy
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <!-- GRID DE TARJETAS / TABLA VIRTUALIZADA: Optimizado para Samsung Galaxy S24 Ultra -->
+    <MudTable Items="@_proxies" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
+        <HeaderContent>
+            <MudTh>Dirección IP</MudTh>
+            <MudTh>Puerto</MudTh>
+            <MudTh>Latencia</MudTh>
+            <MudTh>Fallos</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Dirección IP" Class="font-bold">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.NetworkWifi" Size="Size.Small" Color="Color.Default" />
+                    @context.Ip
+                </div>
+            </MudTd>
+            <MudTd DataLabel="Puerto">@context.Puerto</MudTd>
+            <MudTd DataLabel="Latencia">
+                @if (context.LatenciaMs > 0)
+                {
+                    <span class="@(context.LatenciaMs < 300 ? "mud-text-success" : context.LatenciaMs < 800 ? "mud-text-warning" : "mud-text-error") font-medium">
+                        @context.LatenciaMs ms
+                    </span>
+                }
+                else
+                {
+                    <span class="text-muted">Sin test</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Fallos">
+                <span class="@(context.FallosAcumulados == 0 ? "text-muted" : "mud-text-error font-medium")">
+                    @context.FallosAcumulados
+                </span>
+            </MudTd>
+            <MudTd DataLabel="Estado">
+                <div class="d-flex align-center gap-1">
+                    @if (context.Baneado)
+                    {
+                        <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Baneado</MudChip>
+                    }
+                    else if (context.Activo)
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Activo</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Inactivo</MudChip>
+                    }
+                </div>
+            </MudTd>
+            <MudTd DataLabel="Acciones">
+                <div class="d-flex align-center gap-1">
+                    <MudTooltip Text="@(context.Activo ? "Desactivar" : "Activar")">
+                        <MudIconButton Icon="@(context.Activo ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)" 
+                                       Color="@(context.Activo ? Color.Primary : Color.Default)" 
+                                       Size="Size.Small" 
+                                       OnClick="@(() => ToggleProxyActivo(context))" />
+                    </MudTooltip>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="(() => OpenEditProxyDialog(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="(() => DeleteProxy(context))" />
+                </div>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+<!-- DIALOG INLINE PARA REGISTRAR/EDITAR PROXY -->
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-bold">@(_newProxy.Id == 0 ? "Registrar Nuevo Proxy" : "Editar Proxy")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formIsValid">
+            <div class="d-flex flex-column gap-3">
+                <MudGrid>
+                    <MudItem xs="8">
+                        <MudTextField @bind-Value="_newProxy.Ip" Label="Dirección IP / Host" Required="true" RequiredError="La dirección IP es obligatoria" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="4">
+                        <MudNumericField @bind-Value="_newProxy.Puerto" Label="Puerto" Required="true" RequiredError="Puerto obligatorio" Min="1" Max="65535" Variant="Variant.Outlined" HideSpinButtons="true" />
+                    </MudItem>
+                </MudGrid>
+                
+                <MudExpansionPanels Elevation="0" Class="border border-solid mud-border-default rounded">
+                    <MudExpansionPanel Text="Autenticación (Opcional)" Icon="@Icons.Material.Filled.VpnKey">
+                        <div class="d-flex flex-column gap-3 pt-2">
+                            <MudTextField @bind-Value="_newProxy.Usuario" Label="Usuario Proxy" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_newProxy.Password" Label="Contraseña Proxy" InputType="InputType.Password" Variant="Variant.Outlined" />
+                        </div>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+                
+                <div class="d-flex align-center justify-space-between mt-2">
+                    <MudCheckBox @bind-Value="_newProxy.Activo" Label="Activo" Color="Color.Primary" />
+                    <MudCheckBox @bind-Value="_newProxy.Baneado" Label="Marcar como Baneado (Evitar)" Color="Color.Error" />
+                </div>
+            </div>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="(() => _dialogOpen = false)">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(!_formIsValid)" OnClick="SaveProxy">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<RegistroProxy> _proxies = new();
+    private bool _loading = true;
+    private bool _dialogOpen = false;
+    private RegistroProxy _newProxy = new();
+    private MudForm _form = null!;
+    private bool _formIsValid;
+    private readonly DialogOptions _dialogOptions = new() { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProxies();
+    }
+
+    private async Task LoadProxies()
+    {
+        _loading = true;
+        using var context = await DbFactory.CreateDbContextAsync();
+        _proxies = await context.RegistroProxies.OrderBy(p => p.Ip).ToListAsync();
+        _loading = false;
+    }
+
+    private void OpenAddProxyDialog()
+    {
+        _newProxy = new RegistroProxy();
+        _dialogOpen = true;
+    }
+
+    private void OpenEditProxyDialog(RegistroProxy proxy)
+    {
+        _newProxy = new RegistroProxy
+        {
+            Id = proxy.Id,
+            Ip = proxy.Ip,
+            Puerto = proxy.Puerto,
+            Usuario = proxy.Usuario,
+            Password = proxy.Password,
+            Activo = proxy.Activo,
+            LatenciaMs = proxy.LatenciaMs,
+            FallosAcumulados = proxy.FallosAcumulados,
+            Baneado = proxy.Baneado,
+            UltimoUso = proxy.UltimoUso
+        };
+        _dialogOpen = true;
+    }
+
+    private async Task SaveProxy()
+    {
+        await _form.Validate();
+        if (!_formIsValid) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        
+        if (_newProxy.Id == 0)
+        {
+            context.RegistroProxies.Add(_newProxy);
+        }
+        else
+        {
+            context.Entry(_newProxy).State = EntityState.Modified;
+        }
+
+        await context.SaveChangesAsync();
+        Snackbar.Add(_newProxy.Id == 0 ? "Proxy registrado." : "Proxy actualizado.", Severity.Success);
+        _dialogOpen = false;
+        await LoadProxies();
+    }
+
+    private async Task ToggleProxyActivo(RegistroProxy proxy)
+    {
+        proxy.Activo = !proxy.Activo;
+        using var context = await DbFactory.CreateDbContextAsync();
+        context.Entry(proxy).State = EntityState.Modified;
+        await context.SaveChangesAsync();
+        Snackbar.Add($"Proxy {proxy.Ip} {(proxy.Activo ? "activado" : "desactivado")}.", proxy.Activo ? Severity.Success : Severity.Warning);
+    }
+
+    private async Task DeleteProxy(RegistroProxy proxy)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Seguro que desea eliminar el proxy {proxy.Ip}:{proxy.Puerto}?");
+
+        if (confirm)
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            context.RegistroProxies.Remove(proxy);
+            await context.SaveChangesAsync();
+            Snackbar.Add("Proxy eliminado.", Severity.Success);
+            await LoadProxies();
+        }
+    }
+}

@@ -1,0 +1,188 @@
+@page "/sitios"
+@rendermode InteractiveServer
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<PageTitle>Configuración de Sitios - Teocuitla</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-6">
+    <div>
+        <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Sitios de E-Commerce</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted">Administra los portales comerciales y configura los selectores de scraping.</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="(() => OpenSitioDialog(null))">
+        Agregar Sitio
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <div class="d-flex justify-center my-12">
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+    </div>
+}
+else if (_sitios.Count == 0)
+{
+    <MudPaper Class="d-flex flex-column align-center justify-center p-12 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface); min-height: 300px;">
+        <MudIcon Icon="@Icons.Material.Filled.SettingsInputComponent" Size="Size.Large" Color="Color.Primary" Class="mb-4" Style="font-size: 3rem;" />
+        <MudText Typo="Typo.h6" Class="font-bold mb-2">Sin sitios configurados</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted max-w-md mb-6">
+            Comienza agregando un sitio web de e-commerce (por ejemplo, Amazon o MercadoLibre) para definir cómo el rastreador extraerá sus precios.
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="(() => OpenSitioDialog(null))">
+            Agregar primer sitio
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        @foreach (var sitio in _sitios)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Outlined="true" Class="d-flex flex-column h-100 border border-solid mud-border-default hover-card transition-all" Style="background: var(--mud-palette-surface);">
+                    <MudCardHeader Class="pb-2">
+                        <CardHeaderAvatar>
+                            <MudAvatar Color="@(sitio.Activo ? Color.Primary : Color.Default)" Variant="Variant.Outlined" Class="font-bold">
+                                @sitio.Nombre.Substring(0, Math.Min(2, sitio.Nombre.Length)).ToUpper()
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6" Class="font-bold">@sitio.Nombre</MudText>
+                            <MudLink Href="@sitio.UrlBase" Target="_blank" Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 180px;">
+                                @sitio.UrlBase
+                            </MudLink>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudSwitch T="bool" Value="@sitio.Activo" ValueChanged="@((val) => ToggleSitioActivo(sitio, val))" Color="Color.Primary" />
+                        </CardHeaderActions>
+                    </MudCardHeader>
+
+                    <MudCardContent Class="pt-0 flex-grow-1">
+                        <MudDivider Class="mb-4" />
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <MudText Typo="Typo.body2" Class="text-muted">Frecuencia:</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text" Class="font-bold">
+                                cada @(sitio.IntervaloMinutos / 60) hrs
+                            </MudChip>
+                        </div>
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <MudText Typo="Typo.body2" Class="text-muted">Evasión:</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="@GetEvasionColor(sitio.EstrategiaEvasion)" Variant="Variant.Text" Class="font-bold">
+                                @sitio.EstrategiaEvasion
+                            </MudChip>
+                        </div>
+                        <div class="d-flex align-center justify-space-between">
+                            <MudText Typo="Typo.body2" Class="text-muted">Último rastreo:</MudText>
+                            <MudText Typo="Typo.body2" Class="font-medium">
+                                @(sitio.UltimoRastreo?.ToString("dd/MM/yyyy HH:mm") ?? "Nunca")
+                            </MudText>
+                        </div>
+                    </MudCardContent>
+
+                    <MudCardActions Class="border-t border-solid mud-border-default justify-space-between px-4 py-2">
+                        <MudTooltip Text="Probar selectores">
+                            <MudIconButton Icon="@Icons.Material.Filled.PlayCircle" Color="Color.Success" Size="Size.Small" OnClick="@(() => TestScraper(sitio))" />
+                        </MudTooltip>
+                        <div>
+                            <MudButton StartIcon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="(() => OpenSitioDialog(sitio))">Editar</MudButton>
+                            <MudButton StartIcon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="(() => ConfirmDeleteSitio(sitio))">Eliminar</MudButton>
+                        </div>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<CatalogoSitio> _sitios = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSitios();
+    }
+
+    private async Task LoadSitios()
+    {
+        _loading = true;
+        using var context = await DbFactory.CreateDbContextAsync();
+        _sitios = await context.CatalogoSitios.OrderBy(s => s.Nombre).ToListAsync();
+        _loading = false;
+    }
+
+    private async Task ToggleSitioActivo(CatalogoSitio sitio, bool valor)
+    {
+        sitio.Activo = valor;
+        using var context = await DbFactory.CreateDbContextAsync();
+        context.Entry(sitio).State = EntityState.Modified;
+        await context.SaveChangesAsync();
+        Snackbar.Add($"Sitio {sitio.Nombre} {(valor ? "activado" : "desactivado")}.", valor ? Severity.Success : Severity.Warning);
+    }
+
+    private Color GetEvasionColor(string estrategia)
+    {
+        return estrategia.ToLower() switch
+        {
+            "standard" => Color.Success,
+            "cloudflare" => Color.Error,
+            "heavy-js" => Color.Warning,
+            _ => Color.Default
+        };
+    }
+
+    private async Task OpenSitioDialog(CatalogoSitio? sitio)
+    {
+        var parameters = new DialogParameters<SitioDialog>
+        {
+            { x => x.Sitio, sitio ?? new CatalogoSitio() }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var title = sitio == null ? "Agregar Nuevo Sitio de E-Commerce" : $"Editar Sitio: {sitio.Nombre}";
+        
+        var dialog = await DialogService.ShowAsync<SitioDialog>(title, parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadSitios();
+        }
+    }
+
+    private async Task ConfirmDeleteSitio(CatalogoSitio sitio)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", 
+            $"¿Está seguro de que desea eliminar el sitio '{sitio.Nombre}'? Esto no eliminará los productos asociados, pero dejará de monitorear sus variantes.");
+
+        if (confirm)
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            context.CatalogoSitios.Remove(sitio);
+            await context.SaveChangesAsync();
+            Snackbar.Add($"Sitio {sitio.Nombre} eliminado.", Severity.Success);
+            await LoadSitios();
+        }
+    }
+
+    private void TestScraper(CatalogoSitio sitio)
+    {
+        Snackbar.Add($"Iniciando prueba de scraping simulada para {sitio.Nombre}...", Severity.Info);
+        // Aquí se simula la acción; en el futuro se puede agregar un WebSocket o llamada a probar selectores reales.
+    }
+}
+
+<style>
+    .hover-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--mud-palette-primary) !important;
+    }
+    .truncate-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>

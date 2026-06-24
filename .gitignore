@@ -3,3 +3,10 @@
 ################################################################################
 
 /Teocuitla.Web/bin/Debug/net9.0
+/Teocuitla.Shared/obj
+/Teocuitla.Shared/bin/Debug/net9.0
+/Teocuitla.Web/obj
+/Teocuitla.Worker/bin/Debug/net9.0
+/Teocuitla.Worker/obj
+/Teocuitla.Tests/bin/Debug/net9.0
+/Teocuitla.Tests/obj

@@ -1,0 +1,211 @@
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formIsValid" Class="my-2">
+            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToInnerViews="true" Color="Color.Primary" Class="border border-solid mud-border-default rounded">
+                
+                <!-- Pestaña 1: General -->
+                <MudTabPanel Text="General" Icon="@Icons.Material.Filled.Info">
+                    <div class="pa-4 d-flex flex-column gap-4">
+                        <MudGrid>
+                            <MudItem xs="12" sm="8">
+                                <MudTextField @bind-Value="Sitio.Nombre" 
+                                              Label="Nombre del Sitio" 
+                                              Required="true" 
+                                              RequiredError="El nombre del sitio es obligatorio."
+                                              Placeholder="Ej. Amazon, MercadoLibre, Liverpool"
+                                              Variant="Variant.Outlined" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4" Class="d-flex align-center">
+                                <MudCheckBox @bind-Value="Sitio.Activo" Label="Sitio Activo" Color="Color.Primary" />
+                            </MudItem>
+                            
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="Sitio.UrlBase" 
+                                              Label="URL Base" 
+                                              Required="true" 
+                                              RequiredError="La URL base es obligatoria."
+                                              Placeholder="Ej. https://www.amazon.com.mx"
+                                              HelperText="Dominio principal para verificar y restringir el rastreo."
+                                              Variant="Variant.Outlined" />
+                            </MudItem>
+                            
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int" @bind-Value="Sitio.IntervaloMinutos" Label="Intervalo de Rastreo" Variant="Variant.Outlined">
+                                    <MudSelectItem Value="60">Cada 1 Hora</MudSelectItem>
+                                    <MudSelectItem Value="180">Cada 3 Horas</MudSelectItem>
+                                    <MudSelectItem Value="360">Cada 6 Horas (Recomendado)</MudSelectItem>
+                                    <MudSelectItem Value="720">Cada 12 Horas</MudSelectItem>
+                                    <MudSelectItem Value="1440">Cada 24 Horas</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        </MudGrid>
+                    </div>
+                </MudTabPanel>
+
+                <!-- Pestaña 2: Selectores -->
+                <MudTabPanel Text="Selectores Web" Icon="@Icons.Material.Filled.Code">
+                    <div class="pa-4 d-flex flex-column gap-4">
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Text" Class="mb-2" Dense="true">
+                            Especifica selectores XPath o selectores CSS. Haz clic en el ícono de la mano <strong>Touch</strong> al final de cada campo para iniciar el asistente de selección visual interactivo.
+                        </MudAlert>
+                        
+                        <MudGrid>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="Sitio.SelectorNombreXPath" 
+                                              Label="Selector del Nombre del Producto" 
+                                              Placeholder='@("Ej. //h1[@id=\'title\'] o h1.product-title")'
+                                              HelperText="Extrae el título descriptivo del artículo."
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End"
+                                              AdornmentIcon="@Icons.Material.Filled.TouchApp"
+                                              AdornmentColor="Color.Primary"
+                                              OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorNombreXPath)))" />
+                            </MudItem>
+                            
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="Sitio.SelectorPrecioXPath" 
+                                              Label="Selector de Precio" 
+                                              Placeholder='@("Ej. //span[@class=\'a-price-whole\'] o .price")'
+                                              HelperText="Extrae la cadena de texto con el precio del artículo."
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End"
+                                              AdornmentIcon="@Icons.Material.Filled.TouchApp"
+                                              AdornmentColor="Color.Primary"
+                                              OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorPrecioXPath)))" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="Sitio.SelectorStockXPath" 
+                                              Label="Selector de Stock (Disponibilidad)" 
+                                              Placeholder='@("Ej. //div[@id=\'availability\'] o .in-stock")'
+                                              HelperText="Determina si el producto está en stock mediante presencia de texto."
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End"
+                                              AdornmentIcon="@Icons.Material.Filled.TouchApp"
+                                              AdornmentColor="Color.Primary"
+                                              OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorStockXPath)))" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="Sitio.SelectorProductoXPath" 
+                                              Label="Selector de Contenedor de Producto" 
+                                              Placeholder='@("Ej. //div[@id=\'dp-container\'] o #main-content")'
+                                              HelperText="Opcional. Contenedor principal para inyección interactiva."
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End"
+                                              AdornmentIcon="@Icons.Material.Filled.TouchApp"
+                                              AdornmentColor="Color.Primary"
+                                              OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorProductoXPath)))" />
+                            </MudItem>
+                        </MudGrid>
+                    </div>
+                </MudTabPanel>
+
+                <!-- Pestaña 3: Evasión y Seguridad -->
+                <MudTabPanel Text="Evasión de Antibots" Icon="@Icons.Material.Filled.Security">
+                    <div class="pa-4 d-flex flex-column gap-4">
+                        <MudGrid>
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="string" @bind-Value="Sitio.EstrategiaEvasion" Label="Estrategia de Evasión" Variant="Variant.Outlined">
+                                    <MudSelectItem Value="@("Standard")">Estándar (HTTP Ligero / Scraping rápido)</MudSelectItem>
+                                    <MudSelectItem Value="@("Cloudflare")">Cloudflare (Selenium con pausas y simulación humana)</MudSelectItem>
+                                    <MudSelectItem Value="@("Heavy-JS")">JavaScript Pesado (Selenium con renderizado de SPA)</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        </MudGrid>
+                        
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Text" Dense="true" Class="mt-4">
+                            <strong>Nota:</strong> Las estrategias avanzadas (Cloudflare y Heavy-JS) forzarán al Worker local a levantar instancias completas de Chrome headless, lo cual consume más CPU y memoria, pero evade bloqueos eficientemente.
+                        </MudAlert>
+                    </div>
+                </MudTabPanel>
+
+            </MudTabs>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(!_formIsValid)" OnClick="Submit">Guardar Sitio</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] 
+    public CatalogoSitio Sitio { get; set; } = new();
+
+    private MudForm _form = null!;
+    private bool _formIsValid;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task LaunchVisualSelector(string propertyName)
+    {
+        var parameters = new DialogParameters<SelectorVisualDialog>
+        {
+            { x => x.InitialUrl, Sitio.UrlBase }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<SelectorVisualDialog>("Asistente de Selección Visual", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is string selector)
+        {
+            switch (propertyName)
+            {
+                case nameof(Sitio.SelectorNombreXPath):
+                    Sitio.SelectorNombreXPath = selector;
+                    break;
+                case nameof(Sitio.SelectorPrecioXPath):
+                    Sitio.SelectorPrecioXPath = selector;
+                    break;
+                case nameof(Sitio.SelectorStockXPath):
+                    Sitio.SelectorStockXPath = selector;
+                    break;
+                case nameof(Sitio.SelectorProductoXPath):
+                    Sitio.SelectorProductoXPath = selector;
+                    break;
+            }
+            
+            Snackbar.Add("Selector copiado correctamente.", Severity.Success);
+            StateHasChanged();
+        }
+    }
+
+    private async Task Submit()
+    {
+        await _form.Validate();
+        if (!_formIsValid) return;
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            
+            if (Sitio.Id == 0)
+            {
+                context.CatalogoSitios.Add(Sitio);
+                await context.SaveChangesAsync();
+                Snackbar.Add($"Sitio '{Sitio.Nombre}' creado exitosamente.", Severity.Success);
+            }
+            else
+            {
+                context.Entry(Sitio).State = EntityState.Modified;
+                await context.SaveChangesAsync();
+                Snackbar.Add($"Sitio '{Sitio.Nombre}' actualizado exitosamente.", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al guardar el sitio: {ex.Message}", Severity.Error);
+        }
+    }
+}
