@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Teocuitla.Worker.Services;
+using Teocuitla.Shared.Helpers;
 
 namespace Teocuitla.Tests
 {
@@ -61,6 +62,77 @@ namespace Teocuitla.Tests
         {
             // Assert
             Assert.NotNull(_scraperService);
+        }
+
+        [Theory]
+        [InlineData("//div[@id='price']", true)]
+        [InlineData("/html/body/div[1]", true)]
+        [InlineData("id('price')", true)]
+        [InlineData("(//span)[2]", true)]
+        [InlineData(".//div/span", true)]
+        [InlineData("div[@class='price']", true)]
+        [InlineData("text()", true)]
+        [InlineData("contains(text(), 'price')", true)]
+        [InlineData("body/main[1]/div[5]", true)]
+        [InlineData("div[1]", true)]
+        [InlineData("a[href=\"http://example.com\"]", false)]
+        [InlineData("a[href='http://example.com']", false)]
+        [InlineData("div.price", false)]
+        [InlineData("#price", false)]
+        [InlineData("div > span", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        public void EsSelectorXPath_WithVariousSelectors_ReturnsExpected(string? selector, bool expected)
+        {
+            var result = SelectorValidator.EsSelectorXPath(selector);
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData("//div[@id='price']", true)]
+        [InlineData("/html/body/div[1]", true)]
+        [InlineData("id('price')", true)]
+        [InlineData("//div[@id=", false)]
+        [InlineData("///", false)]
+        public void IsValidXPath_WithVariousPaths_ReturnsExpected(string xpath, bool expected)
+        {
+            var result = SelectorValidator.IsValidXPath(xpath);
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData("div.price", true)]
+        [InlineData("#price", true)]
+        [InlineData("div > span", true)]
+        [InlineData("div[class='price']", true)]
+        [InlineData("div:not(.active)", true)]
+        [InlineData("div[class='price", false)]
+        [InlineData("div:not(.active", false)]
+        [InlineData("div[class='price\"]", false)]
+        [InlineData("div > ", false)]
+        [InlineData("div @ class", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        public void IsValidCssSelector_WithVariousSelectors_ReturnsExpected(string? selector, bool expected)
+        {
+            var result = SelectorValidator.IsValidCssSelector(selector);
+            Assert.Equal(expected, result);
+        }
+
+        [Theory]
+        [InlineData("//div[@id='price']", true)]
+        [InlineData("div.price", true)]
+        [InlineData("body/main[1]/div[5]", true)]
+        [InlineData("div[1]", true)]
+        [InlineData("a[href=\"http://example.com\"]", true)]
+        [InlineData("//div[@id=", false)]
+        [InlineData("div[class='price", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        public void IsValidSelector_WithVariousSelectors_ReturnsExpected(string? selector, bool expected)
+        {
+            var result = SelectorValidator.IsValidSelector(selector);
+            Assert.Equal(expected, result);
         }
     }
 }

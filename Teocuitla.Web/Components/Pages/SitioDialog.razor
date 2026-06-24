@@ -1,3 +1,4 @@
+@using Teocuitla.Shared.Helpers
 @inject IDbContextFactory<TeocuitlaDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -184,6 +185,9 @@
         await _form.Validate();
         if (!_formIsValid) return;
 
+        // Validar que los selectores (tanto XPath como CSS) tengan sintaxis correcta
+        if (!ValidarSelectores()) return;
+
         try
         {
             using var context = await DbFactory.CreateDbContextAsync();
@@ -207,5 +211,84 @@
         {
             Snackbar.Add($"Error al guardar el sitio: {ex.Message}", Severity.Error);
         }
+    }
+
+    private bool ValidarSelectores()
+    {
+        // Validar Selector de Nombre
+        if (!string.IsNullOrWhiteSpace(Sitio.SelectorNombreXPath))
+        {
+            if (SelectorValidator.EsSelectorXPath(Sitio.SelectorNombreXPath))
+            {
+                if (!SelectorValidator.IsValidXPath(Sitio.SelectorNombreXPath))
+                {
+                    Snackbar.Add("El selector de Nombre de producto no es un XPath válido. Revisa la sintaxis.", Severity.Error);
+                    return false;
+                }
+            }
+            else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorNombreXPath))
+            {
+                Snackbar.Add("El selector de Nombre de producto no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
+                return false;
+            }
+        }
+
+        // Validar Selector de Precio
+        if (string.IsNullOrWhiteSpace(Sitio.SelectorPrecioXPath))
+        {
+            Snackbar.Add("El selector de Precio es obligatorio.", Severity.Error);
+            return false;
+        }
+        if (SelectorValidator.EsSelectorXPath(Sitio.SelectorPrecioXPath))
+        {
+            if (!SelectorValidator.IsValidXPath(Sitio.SelectorPrecioXPath))
+            {
+                Snackbar.Add("El selector de Precio no es un XPath válido. Revisa la sintaxis.", Severity.Error);
+                return false;
+            }
+        }
+        else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorPrecioXPath))
+        {
+            Snackbar.Add("El selector de Precio no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
+            return false;
+        }
+
+        // Validar Selector de Stock
+        if (!string.IsNullOrWhiteSpace(Sitio.SelectorStockXPath))
+        {
+            if (SelectorValidator.EsSelectorXPath(Sitio.SelectorStockXPath))
+            {
+                if (!SelectorValidator.IsValidXPath(Sitio.SelectorStockXPath))
+                {
+                    Snackbar.Add("El selector de Stock no es un XPath válido. Revisa la sintaxis.", Severity.Error);
+                    return false;
+                }
+            }
+            else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorStockXPath))
+            {
+                Snackbar.Add("El selector de Stock no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
+                return false;
+            }
+        }
+
+        // Validar Selector de Contenedor (Producto)
+        if (!string.IsNullOrWhiteSpace(Sitio.SelectorProductoXPath))
+        {
+            if (SelectorValidator.EsSelectorXPath(Sitio.SelectorProductoXPath))
+            {
+                if (!SelectorValidator.IsValidXPath(Sitio.SelectorProductoXPath))
+                {
+                    Snackbar.Add("El selector de Contenedor de producto no es un XPath válido. Revisa la sintaxis.", Severity.Error);
+                    return false;
+                }
+            }
+            else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorProductoXPath))
+            {
+                Snackbar.Add("El selector de Contenedor de producto no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
+                return false;
+            }
+        }
+
+        return true;
     }
 }

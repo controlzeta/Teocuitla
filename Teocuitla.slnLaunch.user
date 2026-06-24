@@ -1,0 +1,16 @@
+[
+  {
+    "Name": "Nuevo perfil",
+    "Projects": [
+      {
+        "Path": "Teocuitla.Web\\Teocuitla.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "Teocuitla.Worker\\Teocuitla.Worker.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

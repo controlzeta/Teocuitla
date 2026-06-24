@@ -2,17 +2,30 @@ using Microsoft.EntityFrameworkCore;
 using Teocuitla.Shared.Data;
 using Teocuitla.Worker;
 using Teocuitla.Worker.Services;
+using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Configurar base de datos SQL Server compartida
+// Configurar Serilog con consola y HTTP sink
+var logsIngestionUrl = builder.Configuration["Logging:LogsIngestionUrl"] ?? "http://localhost:5181/api/logs";
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.Http(
+        requestUri: logsIngestionUrl,
+        queueLimitBytes: null,
+        textFormatter: new Serilog.Formatting.Compact.CompactJsonFormatter())
+    .CreateLogger();
+
+builder.Logging.ClearProviders();
+builder.Services.AddSerilog();
+
+// Configurar base de datos SQL Server compartida (AddDbContextFactory registra la fábrica y el DbContext como Scoped automáticamente)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContextFactory<TeocuitlaDbContext>(options =>
-    options.UseSqlServer(connectionString));
-
-// También registrar DbContext normal para inyecciones estándar
-builder.Services.AddDbContext<TeocuitlaDbContext>(options =>
     options.UseSqlServer(connectionString));
 
 // Registrar HttpClientFactory

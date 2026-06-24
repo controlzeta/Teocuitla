@@ -127,6 +127,18 @@ namespace Teocuitla.Web.Controllers
                             V.UltimaActualizacion = T.Fecha
                         FROM Variantes_Comerciales V
                         INNER JOIN #TempIngest T ON V.Id = T.VarianteId;
+
+                        -- Actualizar el último rastreo en la tabla de catálogo de sitios
+                        UPDATE C
+                        SET 
+                            C.UltimoRastreo = S.MaxFecha
+                        FROM Catalogo_Sitios C
+                        INNER JOIN (
+                            SELECT V2.CatalogoSitioId, MAX(T2.Fecha) AS MaxFecha
+                            FROM Variantes_Comerciales V2
+                            INNER JOIN #TempIngest T2 ON V2.Id = T2.VarianteId
+                            GROUP BY V2.CatalogoSitioId
+                        ) S ON C.Id = S.CatalogoSitioId;
                     ";
                     
                     int rowsAffected = await mergeCmd.ExecuteNonQueryAsync();

@@ -15,6 +15,7 @@ namespace Teocuitla.Shared.Data
         public DbSet<VarianteComercial> VariantesComerciales { get; set; } = null!;
         public DbSet<HistorialPrecio> HistorialPrecios { get; set; } = null!;
         public DbSet<RegistroProxy> RegistroProxies { get; set; } = null!;
+        public DbSet<RegistroFallaScraping> RegistroFallasScraping { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -63,6 +64,13 @@ namespace Teocuitla.Shared.Data
             modelBuilder.Entity<VarianteComercial>()
                 .HasIndex(v => v.Sku)
                 .HasDatabaseName("IX_VariantesComerciales_Sku");
+
+            // Configurar relación VarianteComercial -> RegistroFallaScraping (Cascade on Delete)
+            modelBuilder.Entity<RegistroFallaScraping>()
+                .HasOne(f => f.VarianteComercial)
+                .WithMany()
+                .HasForeignKey(f => f.VarianteComercialId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

@@ -105,9 +105,18 @@ namespace Teocuitla.Worker
                     _logger.LogError(ex, "Error en el ciclo principal del Worker.");
                 }
 
-                // Esperar 5 minutos antes de la siguiente verificación de tareas
-                _logger.LogInformation("Esperando 5 minutos para el siguiente ciclo de rastreo...");
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                // Esperar según configuración (5 segundos en modo prueba, 5 minutos en producción)
+                bool testMode = _configuration.GetValue<bool>("Scraping:TestMode", false);
+                if (testMode)
+                {
+                    _logger.LogInformation("[MODO PRUEBA] Ciclo completado. Reintentando en 5 segundos...");
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
+                else
+                {
+                    _logger.LogInformation("Esperando 5 minutos para el siguiente ciclo de rastreo...");
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                }
             }
         }
 
@@ -117,6 +126,7 @@ namespace Teocuitla.Worker
             var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
 
             var now = DateTime.UtcNow;
+            bool testMode = _configuration.GetValue<bool>("Scraping:TestMode", false);
 
             // Cargar todas las variantes asociadas a sitios activos
             var allVariantes = await context.VariantesComerciales
@@ -128,7 +138,8 @@ namespace Teocuitla.Worker
             var due = new List<VarianteComercial>();
             foreach (var v in allVariantes)
             {
-                if (v.UltimaActualizacion == null || 
+                if (testMode ||
+                    v.UltimaActualizacion == null || 
                     v.UltimaActualizacion.Value.AddMinutes(v.CatalogoSitio!.IntervaloMinutos) <= now)
                 {
                     due.Add(v);
@@ -149,47 +160,70 @@ namespace Teocuitla.Worker
                 {
                     if (ct.IsCancellationRequested) break;
 
-                    // Rotar y obtener proxy activo
-                    var proxy = await _proxyService.GetNextProxyAsync();
+                    var jobId = Guid.NewGuid().ToString();
+                    var traceId = Guid.NewGuid().ToString();
+                    var sku = variante.Sku;
 
-                    try
+                    using (Serilog.Context.LogContext.PushProperty("JobId", jobId))
+                    using (Serilog.Context.LogContext.PushProperty("TraceId", traceId))
+                    using (Serilog.Context.LogContext.PushProperty("ProductSKU", sku))
                     {
-                        // Ejecutar el scraping (ligero o pesado según configuración)
-                        var scrapResult = await _scraperService.ScrapeAsync(variante, variante.CatalogoSitio!, proxy);
+                        // Rotar y obtener proxy activo
+                        var proxy = await _proxyService.GetNextProxyAsync();
 
-                        if (scrapResult.Exitoso)
+                        // Actualizar el timestamp del último rastreo del sitio en la base de datos
+                        await UpdateSiteLastCrawlTimestampAsync(variante.CatalogoSitioId);
+
+                        try
                         {
-                            // Registrar éxito en el lote de ingesta
-                            results.Add(new IngestionItemDto
-                            {
-                                VarianteComercialId = variante.Id,
-                                Precio = scrapResult.Precio,
-                                EnStock = scrapResult.EnStock,
-                                FechaCaptura = DateTime.UtcNow
-                            });
+                            // Ejecutar el scraping (ligero o pesado según configuración)
+                            var scrapResult = await _scraperService.ScrapeAsync(variante, variante.CatalogoSitio!, proxy);
 
-                            if (proxy != null)
+                            if (scrapResult.Exitoso)
                             {
-                                // Reportar éxito del proxy para actualizar latencia y reiniciar fallos
-                                await _proxyService.ReportProxySuccessAsync(proxy.Id, scrapResult.LatenciaMs);
+                                // Registrar éxito en el lote de ingesta
+                                results.Add(new IngestionItemDto
+                                {
+                                    VarianteComercialId = variante.Id,
+                                    Precio = scrapResult.Precio,
+                                    EnStock = scrapResult.EnStock,
+                                    FechaCaptura = DateTime.UtcNow
+                                });
+
+                                if (proxy != null)
+                                {
+                                    // Reportar éxito del proxy para actualizar latencia y reiniciar fallos
+                                    await _proxyService.ReportProxySuccessAsync(proxy.Id, scrapResult.LatenciaMs);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Scraping falló para variante: {Nombre}. Registrando HTML de diagnóstico en la base de datos...", variante.Nombre);
+                                
+                                // Guardar el HTML capturado y la razón del fallo en la base de datos para análisis offline
+                                await GuardarFallaScrapingAsync(
+                                    variante.Id, 
+                                    variante.UrlProducto, 
+                                    scrapResult.ErrorMensaje, 
+                                    proxy != null ? $"{proxy.Ip}:{proxy.Puerto}" : null, 
+                                    variante.CatalogoSitio?.EstrategiaEvasion, 
+                                    scrapResult.HtmlFallido
+                                );
+
+                                if (proxy != null)
+                                {
+                                    // Reportar fallo del proxy para penalización o baneo automático
+                                    await _proxyService.ReportProxyFailureAsync(proxy.Id);
+                                }
                             }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            _logger.LogWarning("Scraping falló para variante: {Nombre}.", variante.Nombre);
+                            _logger.LogError(ex, "Error crítico en hilo de scraping para variante {Nombre}.", variante.Nombre);
                             if (proxy != null)
                             {
-                                // Reportar fallo del proxy para penalización o baneo automático
                                 await _proxyService.ReportProxyFailureAsync(proxy.Id);
                             }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error crítico en hilo de scraping para variante {Nombre}.", variante.Nombre);
-                        if (proxy != null)
-                        {
-                            await _proxyService.ReportProxyFailureAsync(proxy.Id);
                         }
                     }
                 }
@@ -242,6 +276,60 @@ namespace Teocuitla.Worker
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falla al transmitir lote de ingesta masiva.");
+            }
+        }
+
+        private async Task UpdateSiteLastCrawlTimestampAsync(int sitioId)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                
+                var sitio = await context.CatalogoSitios.FindAsync(sitioId);
+                if (sitio != null)
+                {
+                    sitio.UltimoRastreo = DateTime.UtcNow;
+                    await context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al actualizar el último rastreo para el sitio {SitioId} en la base de datos.", sitioId);
+            }
+        }
+
+        private async Task GuardarFallaScrapingAsync(
+            int varianteId, 
+            string urlProducto, 
+            string? errorMensaje, 
+            string? proxyUtilizado, 
+            string? estrategia, 
+            string? html)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                
+                var falla = new RegistroFallaScraping
+                {
+                    VarianteComercialId = varianteId,
+                    FechaFalla = DateTime.UtcNow,
+                    UrlProducto = urlProducto,
+                    ErrorMensaje = errorMensaje ?? "Error desconocido",
+                    ProxyUtilizado = proxyUtilizado,
+                    EstrategiaEvasion = estrategia,
+                    HtmlContenido = html ?? string.Empty
+                };
+
+                context.RegistroFallasScraping.Add(falla);
+                await context.SaveChangesAsync();
+                _logger.LogInformation("HTML de diagnóstico de falla registrado exitosamente en la base de datos para la variante {VarianteId}.", varianteId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al guardar el registro de falla de scraping en la base de datos.");
             }
         }
     }

@@ -1,0 +1,340 @@
+@page "/admin/logs"
+@using System.IO
+@using System.Text
+@using System.Text.Json
+@using Teocuitla.Web.Models
+@inject IWebHostEnvironment Env
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
+    <!-- TITULO DE PÁGINA -->
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-bold">Monitoreo de Logs Estructurados</MudText>
+            <MudText Typo="Typo.body2" Class="text-muted">Visualiza, filtra y descarga trazas unificadas del Servidor Web y el Crawler local.</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" 
+                   Color="Color.Secondary" 
+                   StartIcon="@Icons.Material.Filled.Download" 
+                   OnClick="DownloadLogs"
+                   Size="Size.Large">
+            Descargar Log Filtrado
+        </MudButton>
+    </div>
+
+    <MudGrid Spacing="3">
+        <!-- PANEL DE FILTROS -->
+        <MudItem xs="12">
+            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudGrid Spacing="2" Class="align-end">
+                    <MudItem xs="12" sm="3" md="2">
+                        <MudSelect T="int" @bind-Value="_selectedYear" Label="Año" Variant="Variant.Outlined" Margin="Margin.Dense" SelectedValuesChanged="OnFiltersChanged">
+                            @for (int year = DateTime.UtcNow.Year - 1; year <= DateTime.UtcNow.Year + 1; year++)
+                            {
+                                <MudSelectItem Value="@year">@year</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="3" md="2">
+                        <MudSelect T="int" @bind-Value="_selectedMonth" Label="Mes" Variant="Variant.Outlined" Margin="Margin.Dense" SelectedValuesChanged="OnFiltersChanged">
+                            <MudSelectItem Value="1">Enero</MudSelectItem>
+                            <MudSelectItem Value="2">Febrero</MudSelectItem>
+                            <MudSelectItem Value="3">Marzo</MudSelectItem>
+                            <MudSelectItem Value="4">Abril</MudSelectItem>
+                            <MudSelectItem Value="5">Mayo</MudSelectItem>
+                            <MudSelectItem Value="6">Junio</MudSelectItem>
+                            <MudSelectItem Value="7">Julio</MudSelectItem>
+                            <MudSelectItem Value="8">Agosto</MudSelectItem>
+                            <MudSelectItem Value="9">Septiembre</MudSelectItem>
+                            <MudSelectItem Value="10">Octubre</MudSelectItem>
+                            <MudSelectItem Value="11">Noviembre</MudSelectItem>
+                            <MudSelectItem Value="12">Diciembre</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="3" md="2">
+                        <MudSelect T="string" @bind-Value="_selectedLevel" Label="Nivel" Variant="Variant.Outlined" Margin="Margin.Dense" SelectedValuesChanged="OnFiltersChanged">
+                            <MudSelectItem Value="@("All")">Todos los Niveles</MudSelectItem>
+                            <MudSelectItem Value="@("Information")">Information</MudSelectItem>
+                            <MudSelectItem Value="@("Warning")">Warning</MudSelectItem>
+                            <MudSelectItem Value="@("Error")">Error</MudSelectItem>
+                            <MudSelectItem Value="@("Debug")">Debug</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="9" md="4">
+                        <MudTextField @bind-Value="_searchQuery" 
+                                      Label="Búsqueda (Mensaje, SKU, JobId, TraceId)" 
+                                      Placeholder="Escribe para buscar..."
+                                      Variant="Variant.Outlined" 
+                                      Margin="Margin.Dense"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      OnAdornmentClick="OnFiltersChanged"
+                                      @onkeydown="HandleKeyDown" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3" md="2" Class="d-flex gap-2">
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Primary" 
+                                   OnClick="OnFiltersChanged" 
+                                   FullWidth="true"
+                                   Size="Size.Medium">
+                            Filtrar
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudItem>
+
+        <!-- TABLA DE LOGS -->
+        <MudItem xs="12">
+            <MudTable T="LogRecord"
+                      ServerData="ServerReload" 
+                      @ref="_table" 
+                      Hover="true" 
+                      Outlined="true" 
+                      Dense="true" 
+                      Breakpoint="Breakpoint.Md" 
+                      Class="border border-solid mud-border-default rounded overflow-hidden" 
+                      Style="background: var(--mud-palette-surface);"
+                      RowsPerPage="25">
+                <HeaderContent>
+                    <MudTh Style="width: 180px;">Fecha y Hora</MudTh>
+                    <MudTh Style="width: 110px;">Nivel</MudTh>
+                    <MudTh Style="width: 120px;">Origen</MudTh>
+                    <MudTh>Mensaje / Detalles de Trazabilidad</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Fecha y Hora" Class="font-mono text-muted text-xs">
+                        @context.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                    </MudTd>
+                    <MudTd DataLabel="Nivel">
+                        @switch (context.Level)
+                        {
+                            case "Error" or "Fatal":
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Text" Label="true">@context.Level</MudChip>
+                                break;
+                            case "Warning":
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Text" Label="true">@context.Level</MudChip>
+                                break;
+                            case "Debug":
+                                <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Label="true">@context.Level</MudChip>
+                                break;
+                            default:
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Text" Label="true">@context.Level</MudChip>
+                                break;
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Origen">
+                        @if (context.SourceContext == "Teocuitla.Worker")
+                        {
+                            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">Crawler</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">Web Server</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Mensaje">
+                        <div class="d-flex flex-column gap-1 py-1">
+                            <MudText Typo="Typo.body2" Class="font-medium break-all">@context.DisplayMessage</MudText>
+                            
+                            <!-- ETIQUETAS DE TRAZABILIDAD (Muestra si están presentes en el log estructurado) -->
+                            @if (!string.IsNullOrEmpty(context.ProductSKU) || !string.IsNullOrEmpty(context.JobId))
+                            {
+                                <div class="d-flex flex-wrap gap-2 mt-1">
+                                    @if (!string.IsNullOrEmpty(context.ProductSKU))
+                                    {
+                                        <span class="d-flex align-center font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(0,150,136,0.1); color: #009688; border: 1px solid rgba(0,150,136,0.2);">
+                                            <strong>SKU:</strong>&nbsp;@context.ProductSKU
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(context.JobId))
+                                    {
+                                        <span class="d-flex align-center font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(33,150,243,0.1); color: #2196f3; border: 1px solid rgba(33,150,243,0.2);" title="TraceId: @context.TraceId">
+                                            <strong>Job:</strong>&nbsp;@context.JobId.Substring(0, 8)...
+                                        </span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="d-flex flex-column align-center justify-center py-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body2" Class="text-muted">No se encontraron trazas de log para los filtros seleccionados.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager InfoFormat="@("{first_item}-{last_item} de {all_items}")" 
+                                   RowsPerPageString="Filas por página:" 
+                                   AllItemsText="Todos" />
+                </PagerContent>
+            </MudTable>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private MudTable<LogRecord> _table = null!;
+    private int _selectedYear = DateTime.UtcNow.Year;
+    private int _selectedMonth = DateTime.UtcNow.Month;
+    private string _selectedLevel = "All";
+    private string _searchQuery = string.Empty;
+
+    private async Task OnFiltersChanged()
+    {
+        await _table.ReloadServerData();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await OnFiltersChanged();
+        }
+    }
+
+    private async Task<TableData<LogRecord>> ServerReload(TableState state, CancellationToken cancellationToken)
+    {
+        var logDir = Path.Combine(Env.ContentRootPath, "logs");
+        var logFileName = $"log-{_selectedYear}{_selectedMonth:D2}.json";
+        var filePath = Path.Combine(logDir, logFileName);
+
+        var records = new List<LogRecord>();
+
+        if (File.Exists(filePath))
+        {
+            try
+            {
+                // Abrimos el archivo con FileShare.ReadWrite para evitar bloqueos concurrentes
+                // mientras Serilog está escribiendo en el mismo archivo.
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var sr = new StreamReader(fs, Encoding.UTF8);
+                string? line;
+                
+                while ((line = await sr.ReadLineAsync()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    
+                    try
+                    {
+                        var record = JsonSerializer.Deserialize<LogRecord>(line);
+                        if (record != null && MatchesFilters(record))
+                        {
+                            records.Add(record);
+                        }
+                    }
+                    catch
+                    {
+                        // Omitir líneas mal formadas o rotas
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al leer el archivo de log: {ex.Message}", Severity.Error);
+            }
+        }
+
+        // Ordenar del más reciente al más antiguo para visualización en vivo
+        records.Reverse();
+
+        var totalItems = records.Count;
+        var pagedData = records.Skip(state.Page * state.PageSize).Take(state.PageSize).ToArray();
+
+        return new TableData<LogRecord> { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private bool MatchesFilters(LogRecord record)
+    {
+        // Filtro por nivel
+        if (_selectedLevel != "All" && !record.Level.Equals(_selectedLevel, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Filtro de búsqueda libre (busca en mensaje, SKU, JobId, TraceId o el Contexto de origen)
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var query = _searchQuery.Trim().ToLower();
+            bool match = record.DisplayMessage.ToLower().Contains(query) ||
+                         (record.ProductSKU?.ToLower().Contains(query) ?? false) ||
+                         (record.JobId?.ToLower().Contains(query) ?? false) ||
+                         (record.TraceId?.ToLower().Contains(query) ?? false) ||
+                         (record.SourceContext?.ToLower().Contains(query) ?? false);
+            
+            if (!match) return false;
+        }
+
+        return true;
+    }
+
+    private async Task DownloadLogs()
+    {
+        var logDir = Path.Combine(Env.ContentRootPath, "logs");
+        var logFileName = $"log-{_selectedYear}{_selectedMonth:D2}.json";
+        var filePath = Path.Combine(logDir, logFileName);
+
+        if (!File.Exists(filePath))
+        {
+            Snackbar.Add("No existen trazas de log para el mes seleccionado.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var sb = new StringBuilder();
+            
+            using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs, Encoding.UTF8))
+            {
+                string? line;
+                while ((line = await sr.ReadLineAsync()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    
+                    try
+                    {
+                        var record = JsonSerializer.Deserialize<LogRecord>(line);
+                        if (record != null && MatchesFilters(record))
+                        {
+                            // Formatear a texto plano legible para descargas corporativas o análisis externo
+                            sb.AppendLine($"[{record.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss}] [{record.Level.ToUpper()}] [{record.SourceContext ?? "Teocuitla.Web"}] {record.DisplayMessage}");
+                            if (!string.IsNullOrEmpty(record.ProductSKU))
+                            {
+                                sb.AppendLine($"   └─ SKU: {record.ProductSKU}");
+                            }
+                            if (!string.IsNullOrEmpty(record.JobId))
+                            {
+                                sb.AppendLine($"   └─ JobId: {record.JobId} | TraceId: {record.TraceId}");
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            var fileContent = sb.ToString();
+            if (string.IsNullOrWhiteSpace(fileContent))
+            {
+                Snackbar.Add("No hay logs que coincidan con los filtros aplicados para descargar.", Severity.Warning);
+                return;
+            }
+
+            var fileBytes = Encoding.UTF8.GetBytes(fileContent);
+            using var stream = new MemoryStream(fileBytes);
+            
+            var downloadName = $"log-{_selectedYear}{_selectedMonth:D2}-filtered.txt";
+            using var streamRef = new DotNetStreamReference(stream);
+            
+            // Invocar JSInterop nativo de Blazor para forzar la descarga en el cliente
+            await JS.InvokeVoidAsync("teocuitlaDownloadFileFromStream", downloadName, streamRef);
+            Snackbar.Add("Archivo de logs generado y descargado correctamente.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al generar la descarga: {ex.Message}", Severity.Error);
+        }
+    }
+}

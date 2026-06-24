@@ -66,6 +66,7 @@
                 else
                 {
                     <iframe src="@_proxyUrl" 
+                            sandbox="allow-scripts allow-forms allow-same-origin"
                             style="width: 100%; height: 100%; border: none; min-height: 50vh;" 
                             @onload="OnIframeLoaded">
                     </iframe>
@@ -117,7 +118,9 @@
         }
     }
 
-    private void CargarPaginaProxy()
+    private System.Threading.CancellationTokenSource? _loadingCts;
+
+    private async void CargarPaginaProxy()
     {
         if (string.IsNullOrWhiteSpace(_testUrl))
         {
@@ -128,15 +131,43 @@
         _loadingPage = true;
         _capturedSelector = string.Empty;
         
+        // Cancelar cualquier tarea de carga previa en ejecución
+        _loadingCts?.Cancel();
+        _loadingCts?.Dispose();
+        _loadingCts = new System.Threading.CancellationTokenSource();
+        var token = _loadingCts.Token;
+        
         // Apuntar el iframe a nuestro ProxyController
         _proxyUrl = $"/api/proxy?url={Uri.EscapeDataString(_testUrl)}";
         StateHasChanged();
+
+        // Lanzar temporizador de seguridad de 5 segundos para remover spinner
+        try
+        {
+            await Task.Delay(5000, token);
+            if (!token.IsCancellationRequested && _loadingPage)
+            {
+                _loadingPage = false;
+                StateHasChanged();
+                Snackbar.Add("Carga lista (algunos recursos lentos siguen cargando en segundo plano).", Severity.Info);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Cancelado normalmente al disparar OnIframeLoaded o recargar
+        }
     }
 
     private void OnIframeLoaded()
     {
-        _loadingPage = false;
-        StateHasChanged();
+        // Cancelar el temporizador de seguridad ya que cargó formalmente
+        _loadingCts?.Cancel();
+        
+        if (_loadingPage)
+        {
+            _loadingPage = false;
+            StateHasChanged();
+        }
     }
 
     [JSInvokable]
@@ -163,6 +194,10 @@
 
     public void Dispose()
     {
+        // Cancelar y desechar token de cancelación para evitar fugas
+        _loadingCts?.Cancel();
+        _loadingCts?.Dispose();
+        
         // Desregistrar el escuchador global para evitar fugas de memoria
         _ = JS.InvokeVoidAsync("teocuitlaUnregisterMessageListener");
         _objRef?.Dispose();
