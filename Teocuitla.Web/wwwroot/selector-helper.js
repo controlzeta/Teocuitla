@@ -26,3 +26,34 @@ window.teocuitlaDownloadFileFromStream = async (fileName, contentStreamReference
     anchorElement.remove();
     URL.revokeObjectURL(url);
 };
+
+window.teocuitlaSubmitManualHtml = (html, url) => {
+    let form = document.getElementById('teocuitlaManualForm');
+    if (!form) {
+        form = document.createElement('form');
+        form.id = 'teocuitlaManualForm';
+        form.method = 'POST';
+        form.action = '/api/proxy/manual';
+        form.target = 'selector-iframe';
+        form.style.display = 'none';
+
+        const htmlInput = document.createElement('input');
+        htmlInput.type = 'hidden';
+        htmlInput.name = 'html';
+        htmlInput.id = 'teocuitlaManualHtmlInput';
+        form.appendChild(htmlInput);
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'hidden';
+        urlInput.name = 'url';
+        urlInput.id = 'teocuitlaManualUrlInput';
+        form.appendChild(urlInput);
+
+        document.body.appendChild(form);
+    }
+
+    document.getElementById('teocuitlaManualHtmlInput').value = html;
+    document.getElementById('teocuitlaManualUrlInput').value = url || '';
+    form.submit();
+};
+

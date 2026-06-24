@@ -45,6 +45,10 @@ namespace Teocuitla.Shared.Models
 
         public DateTime? UltimaActualizacion { get; set; }
 
+        public int IntentosDiaActual { get; set; }
+
+        public DateTime? FechaUltimoIntento { get; set; }
+
         public ICollection<HistorialPrecio> HistorialPrecios { get; set; } = new List<HistorialPrecio>();
     }
 }

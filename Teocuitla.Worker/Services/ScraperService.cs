@@ -26,6 +26,8 @@ namespace Teocuitla.Worker.Services
         public int LatenciaMs { get; set; }
         public string? HtmlFallido { get; set; }
         public string? ErrorMensaje { get; set; }
+        public string? LearnedSelector { get; set; }
+        public string? RecommendedStrategy { get; set; }
     }
 
     public class ScraperService
@@ -44,15 +46,10 @@ namespace Teocuitla.Worker.Services
         public async Task<ScraperResult> ScrapeAsync(VarianteComercial variante, CatalogoSitio sitio, RegistroProxy? proxy)
         {
             var stopwatch = Stopwatch.StartNew();
+            string? recommendedStrategy = null;
 
-            // Validar existencia y sintaxis de los selectores antes de iniciar cualquier fase de scraping
-            if (string.IsNullOrWhiteSpace(sitio.SelectorPrecioXPath))
-            {
-                _logger.LogError("El selector de Precio para el sitio '{Sitio}' está vacío y es requerido para el rastreo.", sitio.Nombre);
-                return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
-            }
-
-            if (!SelectorValidator.IsValidSelector(sitio.SelectorPrecioXPath))
+            // Validar sintaxis de los selectores si estan configurados
+            if (!string.IsNullOrWhiteSpace(sitio.SelectorPrecioXPath) && !SelectorValidator.IsValidSelector(sitio.SelectorPrecioXPath))
             {
                 _logger.LogError("El selector de Precio '{Selector}' para el sitio '{Sitio}' es inválido (sintaxis XPath/CSS incorrecta).", sitio.SelectorPrecioXPath, sitio.Nombre);
                 return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
@@ -78,49 +75,177 @@ namespace Teocuitla.Worker.Services
 
             ScraperResult? finalResult = null;
 
-            // Intentar fase ligera (HttpClient + HtmlAgilityPack) si la estrategia es estándar
-            if (sitio.EstrategiaEvasion == "Standard")
+            // 1. Fase normal si hay selector configurado
+            if (!string.IsNullOrWhiteSpace(sitio.SelectorPrecioXPath))
             {
-                finalResult = await ScrapeWithHttpClientAsync(variante, sitio, proxy);
-                if (finalResult.Exitoso)
+                // Intentar fase ligera (HttpClient + HtmlAgilityPack) si la estrategia es estándar
+                if (sitio.EstrategiaEvasion == "Standard")
                 {
-                    stopwatch.Stop();
-                    finalResult.LatenciaMs = (int)stopwatch.ElapsedMilliseconds;
-                    _logger.LogInformation("Scraping exitoso (Fase Ligera - HttpClient) para {Nombre}. Precio: ${Precio}", variante.Nombre, finalResult.Precio);
-                    return finalResult;
+                    finalResult = await ScrapeWithHttpClientAsync(variante, sitio, proxy);
+                    if (finalResult.Exitoso)
+                    {
+                        stopwatch.Stop();
+                        finalResult.LatenciaMs = (int)stopwatch.ElapsedMilliseconds;
+                        _logger.LogInformation("Scraping exitoso (Fase Ligera - HttpClient) para {Nombre}. Precio: ${Precio}", variante.Nombre, finalResult.Precio);
+                        return finalResult;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Fase ligera (HttpClient) falló para {Nombre}: {Message}. Reintentando con Selenium...", variante.Nombre, finalResult.ErrorMensaje);
+                        
+                        // Analizar si la respuesta de HttpClient falló debido a un antibot
+                        string htmlToAnalyze = finalResult.HtmlFallido ?? string.Empty;
+                        string? pageTitle = null;
+                        if (!string.IsNullOrEmpty(htmlToAnalyze))
+                        {
+                            try
+                            {
+                                var doc = new HtmlDocument();
+                                doc.LoadHtml(htmlToAnalyze);
+                                var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+                                if (titleNode != null)
+                                {
+                                    pageTitle = titleNode.InnerText?.Trim();
+                                }
+                            }
+                            catch { /* ignore */ }
+                        }
+                        
+                        var detected = AntibotDetector.DetectBestStrategy(htmlToAnalyze, finalResult.ErrorMensaje, pageTitle);
+                        if (EsEstrategiaMasFuerte(detected, sitio.EstrategiaEvasion))
+                        {
+                            _logger.LogInformation("[ANTIBOT DETECTED] Se identificó la necesidad de evasión '{Strategy}' en la respuesta de HttpClient. Se aplicará Selenium para evasión.", detected);
+                            recommendedStrategy = detected;
+                        }
+                    }
+                }
+
+                // Fallback o estrategia pesada: Selenium Headless
+                try
+                {
+                    finalResult = await ScrapeWithSeleniumAsync(variante, sitio, proxy);
+                }
+                catch (InvalidSelectorException ex)
+                {
+                    _logger.LogError("Error de configuración de selectores para el sitio '{Sitio}': El navegador rechazó el selector por sintaxis inválida. Detalle: {Message}", sitio.Nombre, ex.Message);
+                    finalResult = new ScraperResult { Exitoso = false, ErrorMensaje = ex.Message };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Falla crítica en scraping con Selenium para la variante {Nombre}.", variante.Nombre);
+                    finalResult = new ScraperResult { Exitoso = false, ErrorMensaje = ex.Message };
+                }
+            }
+            else
+            {
+                _logger.LogInformation("Selector de precio vacio para el sitio '{Sitio}'. Iniciando descarga heuristica...", sitio.Nombre);
+                // Si no hay selector, descargamos la pagina para analizarla heuristicamente
+                if (sitio.EstrategiaEvasion == "Standard")
+                {
+                    finalResult = await ScrapeWithHttpClientAsync(variante, sitio, proxy);
                 }
                 else
                 {
-                    _logger.LogWarning("Fase ligera (HttpClient) falló para {Nombre}: {Message}. Reintentando con Selenium...", variante.Nombre, finalResult.ErrorMensaje);
+                    try
+                    {
+                        finalResult = await ScrapeWithSeleniumAsync(variante, sitio, proxy);
+                    }
+                    catch (Exception ex)
+                    {
+                        finalResult = new ScraperResult { Exitoso = false, ErrorMensaje = ex.Message };
+                    }
                 }
             }
 
-            // Fallback o estrategia pesada: Selenium Headless
-            try
+            // Analizar el HTML final si hubo un fallo
+            if (finalResult != null && !finalResult.Exitoso)
             {
-                finalResult = await ScrapeWithSeleniumAsync(variante, sitio, proxy);
-                stopwatch.Stop();
+                string htmlToAnalyze = finalResult.HtmlFallido ?? string.Empty;
+                string? pageTitle = null;
+                if (!string.IsNullOrEmpty(htmlToAnalyze))
+                {
+                    try
+                    {
+                        var doc = new HtmlDocument();
+                        doc.LoadHtml(htmlToAnalyze);
+                        var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+                        if (titleNode != null)
+                        {
+                            pageTitle = titleNode.InnerText?.Trim();
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+
+                var detected = AntibotDetector.DetectBestStrategy(htmlToAnalyze, finalResult.ErrorMensaje, pageTitle);
+                if (EsEstrategiaMasFuerte(detected, sitio.EstrategiaEvasion))
+                {
+                    recommendedStrategy = detected;
+                }
+            }
+
+            // 2. Si el scraping falló o el selector estaba vacío, aplicar heurística como fallback
+            if (finalResult == null || !finalResult.Exitoso)
+            {
+                string htmlToParse = finalResult?.HtmlFallido ?? string.Empty;
+                if (!string.IsNullOrEmpty(htmlToParse))
+                {
+                    _logger.LogInformation("Ejecutando extraccion heuristica de respaldo para la variante '{Nombre}'...", variante.Nombre);
+                    var heuristic = HeuristicExtractor.Extract(htmlToParse);
+                    if (heuristic.Precio.HasValue && heuristic.Precio.Value > 0)
+                    {
+                        _logger.LogInformation("[HEURISTIC SUCCESS] Datos recuperados via {Metodo}: Precio: ${Precio}, Stock: {Stock}", 
+                            heuristic.MetodoDeteccion, heuristic.Precio, heuristic.EnStock);
+                        
+                        // Si la heurística lo rescató, evaluar si de todas formas se detectó un antibot en el HTML
+                        string? pageTitle = null;
+                        try
+                        {
+                            var doc = new HtmlDocument();
+                            doc.LoadHtml(htmlToParse);
+                            var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+                            if (titleNode != null)
+                            {
+                                pageTitle = titleNode.InnerText?.Trim();
+                            }
+                        }
+                        catch { /* ignore */ }
+
+                        var detectedHeur = AntibotDetector.DetectBestStrategy(htmlToParse, finalResult?.ErrorMensaje, pageTitle);
+                        if (EsEstrategiaMasFuerte(detectedHeur, sitio.EstrategiaEvasion))
+                        {
+                            recommendedStrategy = detectedHeur;
+                        }
+
+                        stopwatch.Stop();
+                        return new ScraperResult
+                        {
+                            Exitoso = true,
+                            Precio = heuristic.Precio.Value,
+                            EnStock = heuristic.EnStock,
+                            LatenciaMs = (int)stopwatch.ElapsedMilliseconds,
+                            ErrorMensaje = $"Extraido via heuristica ({heuristic.MetodoDeteccion})",
+                            LearnedSelector = heuristic.XPathSugerido, // Pasar el selector aprendido
+                            RecommendedStrategy = recommendedStrategy
+                        };
+                    }
+                }
+            }
+
+            stopwatch.Stop();
+            if (finalResult != null)
+            {
                 finalResult.LatenciaMs = (int)stopwatch.ElapsedMilliseconds;
-                if (finalResult.Exitoso)
-                {
-                    _logger.LogInformation("Scraping exitoso (Fase Pesada - Selenium) para {Nombre}. Precio: ${Precio}", variante.Nombre, finalResult.Precio);
-                }
-                else
-                {
-                    _logger.LogWarning("Scraping falló con Selenium para {Nombre}. Detalle: {Message}", variante.Nombre, finalResult.ErrorMensaje);
-                }
+                finalResult.RecommendedStrategy = recommendedStrategy;
                 return finalResult;
             }
-            catch (InvalidSelectorException ex)
-            {
-                _logger.LogError("Error de configuración de selectores para el sitio '{Sitio}': El navegador rechazó el selector por sintaxis inválida. Detalle: {Message}", sitio.Nombre, ex.Message);
-                return new ScraperResult { Exitoso = false, LatenciaMs = (int)stopwatch.ElapsedMilliseconds, ErrorMensaje = ex.Message };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Falla crítica en scraping con Selenium para la variante {Nombre}.", variante.Nombre);
-                return new ScraperResult { Exitoso = false, LatenciaMs = (int)stopwatch.ElapsedMilliseconds, ErrorMensaje = ex.Message };
-            }
+            return new ScraperResult 
+            { 
+                Exitoso = false, 
+                LatenciaMs = (int)stopwatch.ElapsedMilliseconds, 
+                ErrorMensaje = "Falla de scraping no controlada",
+                RecommendedStrategy = recommendedStrategy
+            };
         }
 
         private async Task<ScraperResult> ScrapeWithHttpClientAsync(VarianteComercial variante, CatalogoSitio sitio, RegistroProxy? proxy)
@@ -283,6 +408,71 @@ namespace Teocuitla.Worker.Services
             try
             {
                 await Task.Run(() => driver.Navigate().GoToUrl(variante.UrlProducto));
+
+                // Verificar si se presenta un desafío de Captcha (PerimeterX / Verify Your Identity)
+                bool detectadoCaptcha = false;
+                try
+                {
+                    var title = driver.Title;
+                    var hasCaptchaDiv = driver.FindElements(By.Id("px-captcha")).Count > 0;
+                    var hasH1 = driver.FindElements(By.ClassName("Verifica-tu-identida")).Count > 0;
+                    
+                    if (hasCaptchaDiv || hasH1 || 
+                        title.Contains("Verify Your Identity", StringComparison.OrdinalIgnoreCase) || 
+                        title.Contains("Verifica tu identidad", StringComparison.OrdinalIgnoreCase))
+                    {
+                        detectadoCaptcha = true;
+                    }
+                }
+                catch { /* ignore */ }
+
+                if (detectadoCaptcha)
+                {
+                    _logger.LogWarning("[CAPTCHA DETECTED] Se detectó una pantalla de verificación de identidad (PerimeterX) en {Url}. Esperando resolución manual en el navegador...", variante.UrlProducto);
+                    
+                    int maxWaitSeconds = 120; // Damos 2 minutos al usuario para resolver el captcha
+                    int checkIntervalMs = 2000;
+                    int elapsedMs = 0;
+                    bool resuelto = false;
+                    
+                    while (elapsedMs < maxWaitSeconds * 1000)
+                    {
+                        await Task.Delay(checkIntervalMs);
+                        elapsedMs += checkIntervalMs;
+                        
+                        try
+                        {
+                            var stillHasCaptchaDiv = driver.FindElements(By.Id("px-captcha")).Count > 0;
+                            var title = driver.Title;
+                            
+                            if (!stillHasCaptchaDiv && 
+                                !title.Contains("Verify Your Identity", StringComparison.OrdinalIgnoreCase) && 
+                                !title.Contains("Verifica tu identidad", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogInformation("[CAPTCHA SOLVED] El desafío de verificación ha sido resuelto. Continuando raspado...");
+                                resuelto = true;
+                                break;
+                            }
+                        }
+                        catch (WebDriverException ex) when (ex.Message.Contains("chrome not reachable") || 
+                                                             ex.Message.Contains("session deleted") || 
+                                                             ex.Message.Contains("no such window") ||
+                                                             ex.Message.Contains("target window already closed"))
+                        {
+                            _logger.LogWarning("[CAPTCHA ABORT] El navegador fue cerrado por el usuario o se perdió la conexión. Abortando espera.");
+                            break;
+                        }
+                        catch
+                        {
+                            // Ignorar otros errores temporales durante la redirección o recarga del navegador
+                        }
+                    }
+                    
+                    if (!resuelto)
+                    {
+                        _logger.LogError("[CAPTCHA TIMEOUT] Se superó el tiempo límite de {MaxSeconds} segundos para resolver el captcha.", maxWaitSeconds);
+                    }
+                }
 
                 // 4. Pausa aleatoria inicial para romper linealidad temporal
                 await RandomDelayAsync(2, 4);
@@ -471,6 +661,27 @@ namespace Teocuitla.Worker.Services
             var random = new Random();
             int delayMs = random.Next(minSeconds * 1000, maxSeconds * 1000);
             await Task.Delay(delayMs);
+        }
+
+        private static bool EsEstrategiaMasFuerte(string detectada, string actual)
+        {
+            if (detectada == actual) return false;
+            
+            int pesoDetectada = GetStrategyWeight(detectada);
+            int pesoActual = GetStrategyWeight(actual);
+            
+            return pesoDetectada > pesoActual;
+        }
+
+        private static int GetStrategyWeight(string estrategia)
+        {
+            return estrategia switch
+            {
+                "Cloudflare" => 3,
+                "Heavy-JS" => 2,
+                "Standard" => 1,
+                _ => 1
+            };
         }
     }
 }

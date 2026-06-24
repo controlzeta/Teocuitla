@@ -168,6 +168,14 @@ namespace Teocuitla.Worker
                     using (Serilog.Context.LogContext.PushProperty("TraceId", traceId))
                     using (Serilog.Context.LogContext.PushProperty("ProductSKU", sku))
                     {
+                        // 1. Validar e incrementar el numero de intentos diarios (maximo 10 por dia)
+                        bool intentoPermitido = await RegistrarIntentoScrapingAsync(variante.Id);
+                        if (!intentoPermitido)
+                        {
+                            _logger.LogWarning("Limite diario de 10 intentos alcanzado para la variante '{Nombre}' (SKU: {Sku}). Saltando raspado.", variante.Nombre, variante.Sku);
+                            continue;
+                        }
+
                         // Rotar y obtener proxy activo
                         var proxy = await _proxyService.GetNextProxyAsync();
 
@@ -179,8 +187,20 @@ namespace Teocuitla.Worker
                             // Ejecutar el scraping (ligero o pesado según configuración)
                             var scrapResult = await _scraperService.ScrapeAsync(variante, variante.CatalogoSitio!, proxy);
 
-                            if (scrapResult.Exitoso)
+                             if (scrapResult.Exitoso)
                             {
+                                // Si se aprendio un nuevo selector de forma heuristica, guardarlo en BD
+                                if (!string.IsNullOrEmpty(scrapResult.LearnedSelector))
+                                {
+                                    await UpdateSiteSelectorAsync(variante.CatalogoSitioId, scrapResult.LearnedSelector);
+                                }
+
+                                // Si se aprendió una nueva estrategia de evasión, guardarla en BD
+                                if (!string.IsNullOrEmpty(scrapResult.RecommendedStrategy))
+                                {
+                                    await UpdateSiteEvasionStrategyAsync(variante.CatalogoSitioId, scrapResult.RecommendedStrategy);
+                                }
+
                                 // Registrar éxito en el lote de ingesta
                                 results.Add(new IngestionItemDto
                                 {
@@ -200,6 +220,12 @@ namespace Teocuitla.Worker
                             {
                                 _logger.LogWarning("Scraping falló para variante: {Nombre}. Registrando HTML de diagnóstico en la base de datos...", variante.Nombre);
                                 
+                                // Si se aprendió una nueva estrategia de evasión en el intento fallido, guardarla en BD
+                                if (!string.IsNullOrEmpty(scrapResult.RecommendedStrategy))
+                                {
+                                    await UpdateSiteEvasionStrategyAsync(variante.CatalogoSitioId, scrapResult.RecommendedStrategy);
+                                }
+
                                 // Guardar el HTML capturado y la razón del fallo en la base de datos para análisis offline
                                 await GuardarFallaScrapingAsync(
                                     variante.Id, 
@@ -330,6 +356,86 @@ namespace Teocuitla.Worker
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al guardar el registro de falla de scraping en la base de datos.");
+            }
+        }
+
+        private async Task<bool> RegistrarIntentoScrapingAsync(int varianteId)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                
+                var variante = await context.VariantesComerciales.FindAsync(varianteId);
+                if (variante == null) return false;
+
+                var hoy = DateTime.UtcNow.Date;
+                
+                if (variante.FechaUltimoIntento.HasValue && variante.FechaUltimoIntento.Value.Date == hoy)
+                {
+                    if (variante.IntentosDiaActual >= 10)
+                    {
+                        return false; // Limite de 10 intentos diarios alcanzado
+                    }
+                    variante.IntentosDiaActual++;
+                }
+                else
+                {
+                    // Dia nuevo o primer intento, reiniciamos el contador
+                    variante.IntentosDiaActual = 1;
+                    variante.FechaUltimoIntento = DateTime.UtcNow;
+                }
+
+                await context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al registrar intento de scraping para variante {VarianteId}.", varianteId);
+                // Si la BD falla temporalmente, permitimos el scraping para no bloquear
+                return true;
+            }
+        }
+
+        private async Task UpdateSiteSelectorAsync(int sitioId, string xpathSelector)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                
+                var sitio = await context.CatalogoSitios.FindAsync(sitioId);
+                if (sitio != null)
+                {
+                    sitio.SelectorPrecioXPath = xpathSelector;
+                    await context.SaveChangesAsync();
+                    _logger.LogInformation("[LEARNING SUCCESS] Se guardo en la base de datos el nuevo selector aprendido para el sitio '{Nombre}': {Selector}", sitio.Nombre, xpathSelector);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al guardar el selector aprendido para el sitio {SitioId}.", sitioId);
+            }
+        }
+
+        private async Task UpdateSiteEvasionStrategyAsync(int sitioId, string estrategia)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                
+                var sitio = await context.CatalogoSitios.FindAsync(sitioId);
+                if (sitio != null)
+                {
+                    sitio.EstrategiaEvasion = estrategia;
+                    await context.SaveChangesAsync();
+                    _logger.LogInformation("[ANTIBOT ADAPTATION] Se actualizó automáticamente la estrategia de evasión para el sitio '{Nombre}' a '{Estrategia}' basado en las firmas detectadas.", sitio.Nombre, estrategia);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al actualizar la estrategia de evasión aprendida para el sitio {SitioId}.", sitioId);
             }
         }
     }

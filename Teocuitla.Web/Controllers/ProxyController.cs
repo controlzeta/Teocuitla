@@ -211,6 +211,56 @@ namespace Teocuitla.Web.Controllers
             return StatusCode(502, $"No se pudo evadir el captcha tras {maxAttempts} intentos. Último error: {lastError}");
         }
 
+        [HttpPost("manual")]
+        public IActionResult LoadManualHtml([FromForm] string html, [FromForm] string? url)
+        {
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return BadRequest("El contenido HTML no puede estar vacío.");
+            }
+
+            _logger.LogInformation("Cargando HTML manual proporcionado por el usuario.");
+
+            // 1. Limpiar y preparar contenido HTML
+            html = CleanHtmlContent(html);
+
+            // 2. Si se proporciona una URL de referencia, inyectar base tag e interceptor de red
+            if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                var baseTag = $"<base href=\"{uri.GetLeftPart(UriPartial.Authority)}{uri.AbsolutePath}\" />";
+                var interceptorScript = GetNetworkInterceptorScript(url);
+                var headInjection = $"\n{baseTag}\n{interceptorScript}\n";
+
+                if (html.Contains("<head>", StringComparison.OrdinalIgnoreCase))
+                {
+                    html = html.Replace("<head>", $"<head>{headInjection}", StringComparison.OrdinalIgnoreCase);
+                }
+                else if (html.Contains("<head ", StringComparison.OrdinalIgnoreCase))
+                {
+                    int index = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
+                    int closingIndex = html.IndexOf(">", index);
+                    if (closingIndex != -1)
+                    {
+                        html = html.Insert(closingIndex + 1, headInjection);
+                    }
+                }
+            }
+
+            // 3. Inyectar el script visual interactivo antes de cerrar el body
+            var scriptInjector = GetVisualSelectorScript();
+
+            if (html.Contains("</body>", StringComparison.OrdinalIgnoreCase))
+            {
+                html = html.Replace("</body>", $"{scriptInjector}\n</body>", StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                html += scriptInjector;
+            }
+
+            return Content(html, "text/html", Encoding.UTF8);
+        }
+
         private async Task ReportProxyFailureAsync(int proxyId)
         {
             try
