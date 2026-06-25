@@ -9,7 +9,10 @@
 
 <div class="d-flex align-center justify-space-between mb-6">
     <div>
-        <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Registro de Proxies IP</MudText>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Registro de Proxies IP</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+        </div>
         <MudText Typo="Typo.body2" Class="text-muted">Administra los servidores proxy utilizados para rotación IP y evasión de sistemas antibots.</MudText>
     </div>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddProxyDialog">
@@ -233,5 +236,24 @@ else
             Snackbar.Add("Proxy eliminado.", Severity.Success);
             await LoadProxies();
         }
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para administrar tus servidores proxy:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Registro de Proxy:</strong> Haz clic en <strong>'Registrar Proxy'</strong> e ingresa los datos de conexión (IP, puerto, y opcionalmente credenciales).</li>
+                    <li><strong>Latencia y Diagnóstico:</strong> Monitorea los milisegundos de respuesta de cada proxy; latencias bajas aseguran rastreos veloces.</li>
+                    <li><strong>Estatus de Baneo:</strong> Observa la tasa de fallos. El motor marcará como <strong>'Baneado'</strong> a cualquier proxy con 5 fallas consecutivas de scraping.</li>
+                    <li><strong>Control Manual:</strong> Habilita, deshabilita o elimina proxies de forma manual desde el listado usando los botones correspondientes.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Registro de Proxies",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
     }
 }

@@ -6,6 +6,14 @@
     <DialogContent>
         <div class="d-flex flex-column gap-3" style="min-height: 80vh;">
             
+            <!-- ENCABEZADO DE SELECTOR ACTIVO -->
+            <div class="d-flex align-center gap-2 px-3 py-2 rounded border border-solid mud-border-default" style="background: var(--mud-palette-surface);">
+                <MudIcon Icon="@Icons.Material.Filled.TouchApp" Color="Color.Primary" Size="Size.Medium" />
+                <MudText Typo="Typo.subtitle1" Class="font-bold text-primary" Style="font-family: 'Outfit', sans-serif;">
+                    Configurando: <span class="mud-text-secondary font-weight-regular" style="font-weight: 400; opacity: 0.85;">@FieldName</span>
+                </MudText>
+            </div>
+            
             <!-- PANEL DE CONTROL SUPERIOR -->
             <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
                 <MudGrid Spacing="2" Class="align-center">
@@ -54,6 +62,7 @@
                     <MudAlert Severity="Severity.Success" Variant="Variant.Text" Class="mt-3 pa-2" Dense="true" Style="border: 1px solid var(--mud-palette-success);">
                         <div class="d-flex flex-column gap-1">
                             <MudText Typo="Typo.subtitle2" Class="font-bold">¡Elemento Capturado!</MudText>
+                            <MudText Typo="Typo.body2"><strong>Etiqueta HTML (Tag):</strong> &lt;@(_capturedTagName?.ToUpper())&gt;</MudText>
                             <MudText Typo="Typo.body2"><strong>Texto extraído:</strong> "@_capturedText"</MudText>
                             
                             <!-- Opción de selector a devolver -->
@@ -114,15 +123,22 @@
     [Parameter] 
     public string InitialUrl { get; set; } = string.Empty;
 
+    [Parameter] 
+    public string FieldName { get; set; } = "Selector";
+
+    [Parameter]
+    public string? InitialManualHtml { get; set; }
+
     private string _testUrl = string.Empty;
     private string _proxyUrl = string.Empty;
     private bool _loadingPage = false;
-    private bool _showManualHtmlPanel = false;
+    private bool _showManualHtmlPanel = true;
     
     // Datos de captura
     private string _capturedXpath = string.Empty;
     private string _capturedCss = string.Empty;
     private string _capturedText = string.Empty;
+    private string _capturedTagName = string.Empty;
     private string _capturedSelector = string.Empty;
     private string _selectedOption = "xpath"; // Por defecto XPath
 
@@ -140,6 +156,38 @@
         {
             // Registrar el escuchador de postMessage en JS
             await JS.InvokeVoidAsync("teocuitlaRegisterMessageListener", _objRef);
+
+            if (!string.IsNullOrWhiteSpace(InitialManualHtml))
+            {
+                await Task.Delay(250);
+                await CargarHtmlManualDirecto(InitialManualHtml);
+            }
+        }
+    }
+
+    private async Task CargarHtmlManualDirecto(string html)
+    {
+        _loadingPage = true;
+        _capturedSelector = string.Empty;
+        _showManualHtmlPanel = true;
+
+        _proxyUrl = "about:blank";
+        StateHasChanged();
+
+        await Task.Delay(150);
+
+        try
+        {
+            await JS.InvokeVoidAsync("teocuitlaSubmitManualHtml", html, _testUrl);
+            
+            // Inyectar opcionalmente en el textarea local en segundo plano para concordancia visual
+            await JS.InvokeVoidAsync("eval", "const el = document.getElementById('manual-html-textarea'); if (el) el.value = 'HTML de diagnóstico cargado automáticamente. Ver visor de código para inspección.';");
+        }
+        catch (Exception ex)
+        {
+            _loadingPage = false;
+            StateHasChanged();
+            Snackbar.Add($"Error al inyectar HTML de diagnóstico: {ex.Message}", Severity.Error);
         }
     }
 
@@ -236,16 +284,17 @@
     }
 
     [JSInvokable]
-    public void OnSelectorSelected(string xpath, string css, string text)
+    public void OnSelectorSelected(string xpath, string css, string text, string tagName)
     {
         _capturedXpath = xpath;
         _capturedCss = css;
         _capturedText = text;
+        _capturedTagName = tagName;
         
         // Actualizar selector capturado
         _capturedSelector = _selectedOption == "xpath" ? _capturedXpath : _capturedCss;
         
-        Snackbar.Add($"Elemento capturado: \"{text}\"", Severity.Success);
+        Snackbar.Add($"Elemento <{tagName.ToUpper()}> capturado: \"{text}\"", Severity.Success);
         StateHasChanged();
     }
 

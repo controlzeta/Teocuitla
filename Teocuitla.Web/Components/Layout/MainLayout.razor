@@ -26,6 +26,8 @@
             <MudNavLink Href="/sitios" Icon="@Icons.Material.Filled.SettingsInputComponent">Configuración Sitios</MudNavLink>
             <MudNavLink Href="/proxies" Icon="@Icons.Material.Filled.VpnLock">Registro Proxies</MudNavLink>
             <MudNavLink Href="/admin/logs" Icon="@Icons.Material.Filled.ReceiptLong">Historial de Logs</MudNavLink>
+            <MudNavLink Href="/admin/fallas" Icon="@Icons.Material.Filled.BugReport">Diagnóstico de Fallas</MudNavLink>
+            <MudNavLink Href="/admin/extractor-categorias" Icon="@Icons.Material.Filled.ManageSearch">Extractor de Categorías</MudNavLink>
         </MudNavMenu>
         <MudSpacer />
         <div class="pa-4 border-t border-solid mud-border-default text-center">
@@ -54,13 +56,13 @@
         PaletteLight = new PaletteLight()
         {
             Primary = "#3F51B5",       // Indigo
-            Secondary = "#009688",     // Teal
+            Secondary = "#00796B",     // Teal de alto contraste (contraste ~5.9:1)
             AppbarBackground = "#FFFFFF",
             Background = "#F5F5F7",
             Surface = "#FFFFFF",
             DrawerBackground = "#FFFFFF",
             TextPrimary = "#1C1C1E",
-            TextSecondary = "#8E8E93",
+            TextSecondary = "#5A5A62",  // Gris oscuro de alto contraste (contraste ~5.1:1) para textos secundarios/muted
             Divider = "#E5E5EA",
             TableLines = "#E5E5EA",
             LinesDefault = "#E5E5EA"

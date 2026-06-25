@@ -1,0 +1,496 @@
+@using HtmlAgilityPack
+@using Teocuitla.Shared.Helpers
+@using Teocuitla.Shared.Models
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.BugReport" Color="Color.Error" />
+            <MudText Typo="Typo.h6" Style="font-family: 'Outfit', sans-serif;" Class="font-bold">
+                Diagnóstico de Scraping: @(_variante?.Nombre ?? "Cargando...")
+            </MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <div class="d-flex flex-column align-center justify-center py-12">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mb-3" />
+                <MudText Typo="Typo.body2" Class="text-muted">Ejecutando análisis heurístico sobre el HTML de diagnóstico...</MudText>
+            </div>
+        }
+        else if (_falla == null)
+        {
+            <MudAlert Severity="Severity.Error">No se pudo cargar el registro de falla con ID @FallaId.</MudAlert>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-4" style="max-height: 75vh; overflow-y: auto; padding-right: 4px;">
+                
+                <!-- ALERTA DE DETALLE DE LA FALLA -->
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="border border-solid" Style="background: var(--mud-palette-surface);">
+                    <div class="d-flex flex-column gap-1">
+                        <MudText Typo="Typo.subtitle2" Class="font-bold">Detalle del Error de Rastreo</MudText>
+                        <MudText Typo="Typo.body2"><strong>Mensaje:</strong> @_falla.ErrorMensaje</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">
+                            <strong>Fecha de Falla:</strong> @_falla.FechaFalla.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") | 
+                            <strong>Estrategia:</strong> @(_falla.EstrategiaEvasion ?? "Standard") | 
+                            <strong>Proxy:</strong> @(_falla.ProxyUtilizado ?? "Directo (Sin Proxy)")
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="truncate-text text-primary break-all" Style="max-width: 100%;">
+                            <strong>URL:</strong> <a href="@_falla.UrlProducto" target="_blank" class="mud-primary-text">@_falla.UrlProducto</a>
+                        </MudText>
+                    </div>
+                </MudAlert>
+
+                <MudTabs Elevation="0" Rounded="true" Color="Color.Primary" Class="border border-solid mud-border-default rounded">
+                    
+                    <!-- PESTAÑA 1: REVISIÓN Y SELECTORES -->
+                    <MudTabPanel Text="Selectores y Heurística" Icon="@Icons.Material.Filled.AutoFixHigh">
+                        <div class="pa-4 d-flex flex-column gap-4">
+                            <MudText Typo="Typo.subtitle2" Class="font-bold border-b border-solid mud-border-default pb-2">
+                                Comparativa de Datos y Sugerencias Heurísticas (Método: @_heuristicResult.MetodoDeteccion)
+                            </MudText>
+
+                            <div class="d-flex flex-column gap-3">
+                                
+                                <!-- CAMPO 1: NOMBRE -->
+                                <div class="pa-3 rounded border border-solid mud-border-default" style="background: var(--mud-palette-surface);">
+                                    <MudGrid Spacing="1" Class="align-center">
+                                        <MudItem xs="12" sm="3">
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold">Nombre del Producto</MudText>
+                                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(string.IsNullOrWhiteSpace(_heuristicResult.Nombre) ? "No detectado" : _heuristicResult.Nombre)</MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_selectorNombre" Label="Selector Actual (Sitio)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_sugeridoNombre" Label="Selector Sugerido (Heurística)" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.TouchApp" AdornmentColor="Color.Primary" OnAdornmentClick="@(() => LaunchVisualSelectorOffline(nameof(_selectorNombre)))" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="1" Class="text-right">
+                                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Tooltip="Aplicar sugerido" OnClick="@(() => AplicarSelector(nameof(_selectorNombre)))" Disabled="@(string.IsNullOrWhiteSpace(_sugeridoNombre))" />
+                                        </MudItem>
+                                    </MudGrid>
+                                </div>
+
+                                <!-- CAMPO 2: PRECIO -->
+                                <div class="pa-3 rounded border border-solid mud-border-default" style="background: var(--mud-palette-surface);">
+                                    <MudGrid Spacing="1" Class="align-center">
+                                        <MudItem xs="12" sm="3">
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold">Precio del Producto</MudText>
+                                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(_heuristicResult.Precio.HasValue ? $"${_heuristicResult.Precio:F2}" : "No detectado")</MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_selectorPrecio" Label="Selector Actual (Sitio)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_sugeridoPrecio" Label="Selector Sugerido (Heurística)" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.TouchApp" AdornmentColor="Color.Primary" OnAdornmentClick="@(() => LaunchVisualSelectorOffline(nameof(_selectorPrecio)))" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="1" Class="text-right">
+                                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Tooltip="Aplicar sugerido" OnClick="@(() => AplicarSelector(nameof(_selectorPrecio)))" Disabled="@(string.IsNullOrWhiteSpace(_sugeridoPrecio))" />
+                                        </MudItem>
+                                    </MudGrid>
+                                </div>
+
+                                <!-- CAMPO 3: DISPONIBILIDAD -->
+                                <div class="pa-3 rounded border border-solid mud-border-default" style="background: var(--mud-palette-surface);">
+                                    <MudGrid Spacing="1" Class="align-center">
+                                        <MudItem xs="12" sm="3">
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold">Stock (Disponibilidad)</MudText>
+                                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(_heuristicResult.EnStock ? "En Stock" : "Agotado / Sin Stock")</MudText>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_selectorStock" Label="Selector Actual (Sitio)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_sugeridoStock" Label="Selector Sugerido (Heurística)" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.TouchApp" AdornmentColor="Color.Primary" OnAdornmentClick="@(() => LaunchVisualSelectorOffline(nameof(_selectorStock)))" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="1" Class="text-right">
+                                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Tooltip="Aplicar sugerido" OnClick="@(() => AplicarSelector(nameof(_selectorStock)))" Disabled="@(string.IsNullOrWhiteSpace(_sugeridoStock))" />
+                                        </MudItem>
+                                    </MudGrid>
+                                </div>
+
+                                <!-- CAMPO 4: IMAGEN -->
+                                <div class="pa-3 rounded border border-solid mud-border-default" style="background: var(--mud-palette-surface);">
+                                    <MudGrid Spacing="1" Class="align-center">
+                                        <MudItem xs="12" sm="3">
+                                            <div class="d-flex align-center gap-3">
+                                                @if (!string.IsNullOrWhiteSpace(_heuristicResult.ImagenUrl))
+                                                {
+                                                    <div class="rounded border border-solid mud-border-default d-flex align-center justify-center" style="width: 50px; height: 50px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
+                                                        <img src="@_heuristicResult.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen Heurística" />
+                                                    </div>
+                                                }
+                                                <div>
+                                                    <MudText Typo="Typo.subtitle2" Class="font-bold">Imagen del Producto</MudText>
+                                                    <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(string.IsNullOrWhiteSpace(_heuristicResult.ImagenUrl) ? "No detectada" : "Imagen detectada")</MudText>
+                                                </div>
+                                            </div>
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_selectorImagen" Label="Selector Actual (Sitio)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="4">
+                                            <MudTextField @bind-Value="_sugeridoImagen" Label="Selector Sugerido (Heurística)" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.TouchApp" AdornmentColor="Color.Primary" OnAdornmentClick="@(() => LaunchVisualSelectorOffline(nameof(_selectorImagen)))" />
+                                        </MudItem>
+                                        <MudItem xs="12" sm="1" Class="text-right">
+                                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Tooltip="Aplicar sugerido" OnClick="@(() => AplicarSelector(nameof(_selectorImagen)))" Disabled="@(string.IsNullOrWhiteSpace(_sugeridoImagen))" />
+                                        </MudItem>
+                                    </MudGrid>
+                                </div>
+
+                            </div>
+                        </div>
+                    </MudTabPanel>
+
+                    <!-- PESTAÑA 2: VISOR HTML DE DIAGNÓSTICO -->
+                    <MudTabPanel Text="Código HTML" Icon="@Icons.Material.Filled.Code">
+                        <div class="pa-4 d-flex flex-column gap-3">
+                            <div class="d-flex align-center justify-space-between border-b border-solid mud-border-default pb-2">
+                                <MudText Typo="Typo.subtitle2" Class="font-bold">Snapshot del Código Fuente HTML del Fallo</MudText>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.TouchApp" OnClick="OpenVisualSelectorAllOffline">
+                                    Abrir en Selector Visual (Offline)
+                                </MudButton>
+                            </div>
+                            <textarea readonly 
+                                      class="w-full p-3 rounded border border-solid mud-border-default bg-dark text-muted" 
+                                      style="width: 100%; height: 350px; background: #0c0c0f; color: #a9a9b3; font-family: 'Courier New', Courier, monospace; font-size: 0.8rem; border-color: var(--mud-palette-divider); outline: none; resize: none; overflow-y: scroll;">@_falla.HtmlContenido</textarea>
+                        </div>
+                    </MudTabPanel>
+                </MudTabs>
+
+                <!-- BOTONES DE ACCIÓN RÁPIDA -->
+                <div class="d-flex gap-3 justify-space-between mt-2 border-t border-solid mud-border-default pt-3">
+                    <div class="d-flex gap-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.SearchOff" OnClick="InhabilitarVariante">
+                            Inhabilitar esta Búsqueda (Variante)
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="DescartarFalla">
+                            Descartar Falla (Resolver)
+                        </MudButton>
+                    </div>
+                    <div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="GuardarSelectoresSitio" Class="px-6">
+                            Guardar Cambios del Sitio
+                        </MudButton>
+                    </div>
+                </div>
+
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] 
+    public int FallaId { get; set; }
+
+    private bool _loading = true;
+    private RegistroFallaScraping? _falla;
+    private VarianteComercial? _variante;
+    private CatalogoSitio? _sitio;
+    private HeuristicResult _heuristicResult = new();
+
+    // Selectores actuales del Sitio
+    private string _selectorNombre = string.Empty;
+    private string _selectorPrecio = string.Empty;
+    private string _selectorStock = string.Empty;
+    private string _selectorImagen = string.Empty;
+
+    // Selectores sugeridos por la heurística
+    private string _sugeridoNombre = string.Empty;
+    private string _sugeridoPrecio = string.Empty;
+    private string _sugeridoStock = string.Empty;
+    private string _sugeridoImagen = string.Empty;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarYAnalizarFallaAsync();
+    }
+
+    private async Task CargarYAnalizarFallaAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            _falla = await context.RegistroFallasScraping
+                .Include(f => f.VarianteComercial)
+                .ThenInclude(v => v!.CatalogoSitio)
+                .FirstOrDefaultAsync(f => f.Id == FallaId);
+
+            if (_falla != null)
+            {
+                _variante = _falla.VarianteComercial;
+                _sitio = _variante?.CatalogoSitio;
+
+                if (_sitio != null)
+                {
+                    _selectorNombre = _sitio.SelectorNombreXPath ?? string.Empty;
+                    _selectorPrecio = _sitio.SelectorPrecioXPath ?? string.Empty;
+                    _selectorStock = _sitio.SelectorStockXPath ?? string.Empty;
+                    _selectorImagen = _sitio.SelectorImagenXPath ?? string.Empty;
+                }
+
+                if (!string.IsNullOrWhiteSpace(_falla.HtmlContenido))
+                {
+                    // Ejecutar extracción heurística
+                    _heuristicResult = HeuristicExtractor.Extract(_falla.HtmlContenido);
+                    
+                    // Cargar HTML en un documento para búsquedas inteligentes de XPath de otros campos
+                    var doc = new HtmlDocument();
+                    doc.LoadHtml(_falla.HtmlContenido);
+
+                    // 1. Sugerencia de Precio (la heurística la genera de forma nativa en XPathSugerido)
+                    _sugeridoPrecio = _heuristicResult.XPathSugerido ?? string.Empty;
+
+                    // 2. Sugerencia de Nombre (Smart XPath para h1 o primer heading)
+                    var h1 = doc.DocumentNode.SelectSingleNode("//h1");
+                    if (h1 != null)
+                    {
+                        _sugeridoNombre = HeuristicExtractor.GetSmartXPath(h1);
+                    }
+                    else
+                    {
+                        _sugeridoNombre = "//h1";
+                    }
+
+                    // 3. Sugerencia de Imagen (Buscar img asociada a la url o clases comunes)
+                    if (!string.IsNullOrEmpty(_heuristicResult.ImagenUrl))
+                    {
+                        string? filename = null;
+                        try
+                        {
+                            var uri = new Uri(_heuristicResult.ImagenUrl);
+                            filename = Path.GetFileName(uri.AbsolutePath);
+                        }
+                        catch
+                        {
+                            // Si es una URL relativa, limpiarla sutilmente
+                            var cleanUrl = _heuristicResult.ImagenUrl.Split('?')[0];
+                            var slashIdx = cleanUrl.LastIndexOf('/');
+                            if (slashIdx >= 0)
+                            {
+                                filename = cleanUrl.Substring(slashIdx + 1);
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(filename) && filename.Length > 4)
+                        {
+                            var imgNode = doc.DocumentNode.SelectSingleNode($"//img[contains(@src, '{filename}') or contains(@data-src, '{filename}')]");
+                            if (imgNode != null)
+                            {
+                                _sugeridoImagen = HeuristicExtractor.GetSmartXPath(imgNode);
+                            }
+                        }
+                    }
+
+                    if (string.IsNullOrEmpty(_sugeridoImagen))
+                    {
+                        var fallbackImg = doc.DocumentNode.SelectSingleNode("//img[contains(@class, 'product') or contains(@id, 'product') or contains(@src, 'product')]")
+                                          ?? doc.DocumentNode.SelectSingleNode("//img[@id='landingImage' or @id='main-image' or @class='front-image']");
+                        if (fallbackImg != null)
+                        {
+                            _sugeridoImagen = HeuristicExtractor.GetSmartXPath(fallbackImg);
+                        }
+                    }
+
+                    // 4. Sugerencia de Stock (Búsqueda semántica básica si está agotado)
+                    if (!_heuristicResult.EnStock)
+                    {
+                        // Buscar elementos que digan "agotado"
+                        var stockNode = doc.DocumentNode.SelectSingleNode("//*[contains(translate(text(), 'AGOTADO', 'agotado'), 'agotado') or contains(text(), 'out of stock')]");
+                        if (stockNode != null)
+                        {
+                            _sugeridoStock = HeuristicExtractor.GetSmartXPath(stockNode);
+                        }
+                        else
+                        {
+                            _sugeridoStock = "//*[contains(text(), 'Agotado')]";
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar la falla: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AplicarSelector(string targetField)
+    {
+        switch (targetField)
+        {
+            case nameof(_selectorNombre):
+                _selectorNombre = _sugeridoNombre;
+                Snackbar.Add("Selector de Nombre sugerido copiado al campo de edición.", Severity.Info);
+                break;
+            case nameof(_selectorPrecio):
+                _selectorPrecio = _sugeridoPrecio;
+                Snackbar.Add("Selector de Precio sugerido copiado al campo de edición.", Severity.Info);
+                break;
+            case nameof(_selectorStock):
+                _selectorStock = _sugeridoStock;
+                Snackbar.Add("Selector de Stock sugerido copiado al campo de edición.", Severity.Info);
+                break;
+            case nameof(_selectorImagen):
+                _selectorImagen = _sugeridoImagen;
+                Snackbar.Add("Selector de Imagen sugerido copiado al campo de edición.", Severity.Info);
+                break;
+        }
+    }
+
+    private async Task GuardarSelectoresSitio()
+    {
+        if (_sitio == null) return;
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dbSitio = await context.CatalogoSitios.FindAsync(_sitio.Id);
+            if (dbSitio != null)
+            {
+                dbSitio.SelectorNombreXPath = _selectorNombre;
+                dbSitio.SelectorPrecioXPath = _selectorPrecio;
+                dbSitio.SelectorStockXPath = _selectorStock;
+                dbSitio.SelectorImagenXPath = _selectorImagen;
+
+                await context.SaveChangesAsync();
+                Snackbar.Add("Selectores del portal actualizados exitosamente en la base de datos. Se aplicarán al siguiente ciclo de rastreo.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al guardar selectores: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task InhabilitarVariante()
+    {
+        if (_variante == null) return;
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dbVariante = await context.VariantesComerciales.FindAsync(_variante.Id);
+            if (dbVariante != null)
+            {
+                dbVariante.Activo = false;
+                await context.SaveChangesAsync();
+
+                // Eliminar el registro de falla de forma automática ya que fue resuelto/desactivado
+                if (_falla != null)
+                {
+                    var dbFalla = await context.RegistroFallasScraping.FindAsync(_falla.Id);
+                    if (dbFalla != null)
+                    {
+                        context.RegistroFallasScraping.Remove(dbFalla);
+                        await context.SaveChangesAsync();
+                    }
+                }
+
+                Snackbar.Add($"Búsqueda inhabilitada y reporte de falla removido para la variante '{_variante.Nombre}'.", Severity.Warning);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al inhabilitar variante: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DescartarFalla()
+    {
+        if (_falla == null) return;
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dbFalla = await context.RegistroFallasScraping.FindAsync(_falla.Id);
+            if (dbFalla != null)
+            {
+                context.RegistroFallasScraping.Remove(dbFalla);
+                await context.SaveChangesAsync();
+                Snackbar.Add("Registro de falla descartado y resuelto exitosamente.", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al descartar falla: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LaunchVisualSelectorOffline(string targetField)
+    {
+        if (_falla == null || _sitio == null) return;
+
+        string fieldLabel = targetField switch
+        {
+            nameof(_selectorNombre) => "Selector del Nombre del Producto",
+            nameof(_selectorPrecio) => "Selector de Precio",
+            nameof(_selectorStock) => "Selector de Stock (Disponibilidad)",
+            nameof(_selectorImagen) => "Selector de Imagen del Producto",
+            _ => "Selector"
+        };
+
+        var parameters = new DialogParameters<SelectorVisualDialog>
+        {
+            { x => x.InitialUrl, _falla.UrlProducto },
+            { x => x.FieldName, fieldLabel },
+            { x => x.InitialManualHtml, _falla.HtmlContenido }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<SelectorVisualDialog>($"Asistente (Offline): {fieldLabel}", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is string selector)
+        {
+            switch (targetField)
+            {
+                case nameof(_selectorNombre):
+                    _selectorNombre = selector;
+                    break;
+                case nameof(_selectorPrecio):
+                    _selectorPrecio = selector;
+                    break;
+                case nameof(_selectorStock):
+                    _selectorStock = selector;
+                    break;
+                case nameof(_selectorImagen):
+                    _selectorImagen = selector;
+                    break;
+            }
+            
+            Snackbar.Add("Selector capturado offline correctamente.", Severity.Success);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenVisualSelectorAllOffline()
+    {
+        // Abre el selector visual offline en un modo genérico o para el precio por defecto
+        await LaunchVisualSelectorOffline(nameof(_selectorPrecio));
+    }
+}

@@ -52,6 +52,8 @@ namespace Teocuitla.Shared.Models
         [MaxLength(1000)]
         public string? ImagenUrl { get; set; }
 
+        public bool Activo { get; set; } = true;
+
         public ICollection<HistorialPrecio> HistorialPrecios { get; set; } = new List<HistorialPrecio>();
     }
 }

@@ -1,7 +1,7 @@
 window.teocuitlaRegisterMessageListener = (dotNetHelper) => {
     const handler = (event) => {
         if (event.data && event.data.type === 'teocuitla-selector-selected') {
-            dotNetHelper.invokeMethodAsync('OnSelectorSelected', event.data.xpath, event.data.css, event.data.text);
+            dotNetHelper.invokeMethodAsync('OnSelectorSelected', event.data.xpath, event.data.css, event.data.text, event.data.tagName || '');
         }
     };
     window.teocuitlaMessageListener = handler;

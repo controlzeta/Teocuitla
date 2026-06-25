@@ -65,6 +65,10 @@ namespace Teocuitla.Shared.Data
                 .HasIndex(v => v.Sku)
                 .HasDatabaseName("IX_VariantesComerciales_Sku");
 
+            modelBuilder.Entity<VarianteComercial>()
+                .Property(v => v.Activo)
+                .HasDefaultValue(true);
+
             // Configurar relación VarianteComercial -> RegistroFallaScraping (Cascade on Delete)
             modelBuilder.Entity<RegistroFallaScraping>()
                 .HasOne(f => f.VarianteComercial)

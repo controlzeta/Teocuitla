@@ -1,0 +1,318 @@
+@page "/admin/fallas"
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@using Teocuitla.Shared.Models
+@using Teocuitla.Shared.Data
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Diagnóstico de Fallas - Teocuitla</PageTitle>
+
+<div class="d-flex flex-column gap-4">
+    
+    <!-- ENCABEZADO -->
+    <div class="d-flex justify-space-between align-center border-b border-solid mud-border-default pb-3">
+        <div>
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.h4" Class="font-bold font-outfit" Style="font-family: 'Outfit', sans-serif;">
+                    Diagnóstico de Fallas de Scraping
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+            </div>
+            <MudText Typo="Typo.body2" Class="text-muted mt-1">
+                Monitorea, analiza y corrige selectores rotos usando capturas de HTML de fallos y heurísticas inteligentes.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="CargarFallasAsync">
+            Actualizar
+        </MudButton>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="d-flex flex-column align-center justify-center py-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mb-3" />
+            <MudText Typo="Typo.body2" Class="text-muted">Cargando reportes de fallas de scraping...</MudText>
+        </div>
+    }
+    else if (_fallasGrouped.Count == 0)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="py-6 border border-solid" Style="background: var(--mud-palette-surface); border-color: var(--mud-palette-success);">
+            <div class="d-flex flex-column gap-1">
+                <MudText Typo="Typo.subtitle1" Class="font-bold">¡Sin fallas registradas!</MudText>
+                <MudText Typo="Typo.body2">Excelente. El motor de scraping está funcionando correctamente y no existen fallas de extracción o captchas pendientes de revisión.</MudText>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        <!-- RESUMEN DE ESTADO RÁPIDO -->
+        <MudGrid>
+            <MudItem xs="12" sm="4">
+                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4" Style="background: var(--mud-palette-surface);">
+                    <div class="rounded pa-3" style="background: rgba(244, 67, 54, 0.1);">
+                        <MudIcon Icon="@Icons.Material.Filled.BugReport" Color="Color.Error" Size="Size.Large" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-bold">@_fallasGrouped.Count</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">Productos Únicos con Falla</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4" Style="background: var(--mud-palette-surface);">
+                    <div class="rounded pa-3" style="background: rgba(255, 152, 0, 0.1);">
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Large" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-bold">@_totalFallasCount</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">Total de Fallas en Historial</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <!-- TABLA DE DETALLES -->
+        <MudTable Items="@_fallasGrouped" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
+            <HeaderContent>
+                <MudTh>Fecha Falla</MudTh>
+                <MudTh>Portal / Tienda</MudTh>
+                <MudTh>Producto / Variante</MudTh>
+                <MudTh>Mensaje de Error</MudTh>
+                <MudTh>Proxy / Evasión</MudTh>
+                <MudTh Class="text-right">Acciones</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Fecha Falla">
+                    <MudText Typo="Typo.body2">@context.FechaFalla.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                    <MudText Typo="Typo.caption" Class="text-muted">Hace @CalcularHaceTiempo(context.FechaFalla)</MudText>
+                </MudTd>
+                <MudTd DataLabel="Portal">
+                    <span class="font-bold">@(context.VarianteComercial?.CatalogoSitio?.Nombre ?? "Desconocido")</span>
+                </MudTd>
+                <MudTd DataLabel="Producto">
+                    <MudText Typo="Typo.body2" Class="font-bold truncate-text" Style="max-width: 250px;">
+                        @(context.VarianteComercial?.Nombre ?? "Variante Eliminada")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="text-muted">SKU: @(context.VarianteComercial?.Sku ?? "N/A")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Error">
+                    <span class="mud-text-error font-medium break-all text-sm" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 40px; max-width: 300px;">
+                        @context.ErrorMensaje
+                    </span>
+                </MudTd>
+                <MudTd DataLabel="Proxy">
+                    <MudText Typo="Typo.body2">@(context.ProxyUtilizado ?? "Conexión Directa")</MudText>
+                    <MudText Typo="Typo.caption" Class="text-muted">Modo: @(context.EstrategiaEvasion ?? "Standard")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Acciones" Class="text-right whitespace-nowrap">
+                    <MudIconButton Icon="@Icons.Material.Filled.AutoFixHigh" Color="Color.Error" Size="Size.Small" Tooltip="Diagnosticar y Corregir" OnClick="@(() => DiagnosticarFalla(context.Id))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.SearchOff" Color="Color.Warning" Size="Size.Small" Tooltip="Inhabilitar Búsqueda" OnClick="@(() => InhabilitarVariante(context.VarianteComercial))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Default" Size="Size.Small" Tooltip="Descartar reporte" OnClick="@(() => DescartarFalla(context.Id))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<RegistroFallaScraping> _fallasGrouped = new();
+    private int _totalFallasCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarFallasAsync();
+    }
+
+    private async Task CargarFallasAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Ejecutar el conteo y la obtención de fallas en paralelo para ahorrar latencia de red
+            var countTask = Task.Run(async () =>
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                return await context.RegistroFallasScraping.CountAsync();
+            });
+
+            var listTask = Task.Run(async () =>
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+
+                // Optimización crítica: 
+                // 1. Filtrar en base de datos para obtener solo el último registro de falla por cada variante comercial (subconsulta correlacionada).
+                // 2. Proyectar selectivamente EXCLUYENDO la columna masiva 'HtmlContenido', evitando transferir megabytes de datos innecesarios en el listado.
+                var rawList = await context.RegistroFallasScraping.AsNoTracking()
+                    .Where(f => f.Id == context.RegistroFallasScraping
+                        .Where(sub => sub.VarianteComercialId == f.VarianteComercialId)
+                        .OrderByDescending(sub => sub.FechaFalla)
+                        .Select(sub => sub.Id)
+                        .FirstOrDefault())
+                    .Select(f => new {
+                        f.Id,
+                        f.FechaFalla,
+                        f.VarianteComercialId,
+                        f.ErrorMensaje,
+                        f.ProxyUtilizado,
+                        f.EstrategiaEvasion,
+                        f.UrlProducto,
+                        VarianteId = f.VarianteComercial != null ? f.VarianteComercial.Id : 0,
+                        VarianteNombre = f.VarianteComercial != null ? f.VarianteComercial.Nombre : "Variante Eliminada",
+                        VarianteSku = f.VarianteComercial != null ? f.VarianteComercial.Sku : "N/A",
+                        SitioId = f.VarianteComercial != null && f.VarianteComercial.CatalogoSitio != null ? f.VarianteComercial.CatalogoSitio.Id : 0,
+                        SitioNombre = f.VarianteComercial != null && f.VarianteComercial.CatalogoSitio != null ? f.VarianteComercial.CatalogoSitio.Nombre : "Desconocido"
+                    })
+                    .ToListAsync();
+
+                return rawList;
+            });
+
+            await Task.WhenAll(countTask, listTask);
+
+            _totalFallasCount = await countTask;
+            var rawResult = await listTask;
+
+            // Mapear los resultados ligeros proyectados a objetos del tipo entidad en memoria para conservar compatibilidad con el markup UI
+            _fallasGrouped = rawResult.Select(x => new RegistroFallaScraping {
+                Id = x.Id,
+                FechaFalla = x.FechaFalla,
+                VarianteComercialId = x.VarianteComercialId,
+                ErrorMensaje = x.ErrorMensaje,
+                ProxyUtilizado = x.ProxyUtilizado,
+                EstrategiaEvasion = x.EstrategiaEvasion,
+                UrlProducto = x.UrlProducto,
+                VarianteComercial = new VarianteComercial {
+                    Id = x.VarianteId,
+                    Nombre = x.VarianteNombre,
+                    Sku = x.VarianteSku,
+                    CatalogoSitio = new CatalogoSitio {
+                        Id = x.SitioId,
+                        Nombre = x.SitioNombre
+                    }
+                }
+            })
+            .OrderByDescending(f => f.FechaFalla)
+            .ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar los reportes de falla: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DiagnosticarFalla(int fallaId)
+    {
+        var parameters = new DialogParameters<FallaReviewDialog>
+        {
+            { x => x.FallaId, fallaId }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FallaReviewDialog>("Revisión y Corrección de Falla", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await CargarFallasAsync();
+        }
+    }
+
+    private async Task InhabilitarVariante(VarianteComercial? variante)
+    {
+        if (variante == null) return;
+
+        bool? confirm = await DialogService.ShowMessageBoxAsync(
+            "Inhabilitar Búsqueda",
+            $"¿Estás seguro de que deseas desactivar el rastreo del producto '{variante.Nombre}'? El Worker ignorará este enlace permanentemente.",
+            yesText: "Desactivar", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                var dbVariante = await context.VariantesComerciales.FindAsync(variante.Id);
+                if (dbVariante != null)
+                {
+                    dbVariante.Activo = false;
+                    await context.SaveChangesAsync();
+
+                    // Limpiar fallas asociadas
+                    var fallasAsociadas = await context.RegistroFallasScraping
+                        .Where(f => f.VarianteComercialId == variante.Id)
+                        .ToListAsync();
+                    
+                    context.RegistroFallasScraping.RemoveRange(fallasAsociadas);
+                    await context.SaveChangesAsync();
+
+                    Snackbar.Add($"Búsqueda inhabilitada para '{variante.Nombre}' correctamente.", Severity.Warning);
+                    await CargarFallasAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al inhabilitar la variante: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DescartarFalla(int fallaId)
+    {
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dbFalla = await context.RegistroFallasScraping.FindAsync(fallaId);
+            if (dbFalla != null)
+            {
+                context.RegistroFallasScraping.Remove(dbFalla);
+                await context.SaveChangesAsync();
+                Snackbar.Add("Reporte de falla descartado correctamente.", Severity.Success);
+                await CargarFallasAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al descartar la falla: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string CalcularHaceTiempo(DateTime fechaUtc)
+    {
+        var diff = DateTime.UtcNow - fechaUtc;
+        if (diff.TotalDays >= 1) return $"{(int)diff.TotalDays} día(s)";
+        if (diff.TotalHours >= 1) return $"{(int)diff.TotalHours} hora(s)";
+        if (diff.TotalMinutes >= 1) return $"{(int)diff.TotalMinutes} minuto(s)";
+        return "segundos";
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para diagnosticar y corregir fallas de scraping:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Monitoreo de Errores:</strong> Revisa el listado de fallas agrupadas por producto, priorizando siempre los registros más recientes.</li>
+                    <li><strong>Diagnóstico Rápido:</strong> Haz clic en el icono de varita mágica (<strong>'Diagnosticar y Corregir'</strong>) para abrir el visor inteligente.</li>
+                    <li><strong>Aplicación de Heurísticas:</strong> Dentro del diálogo, compara los selectores actuales con las sugerencias heurísticas extraídas del HTML de la falla y aplícalas directamente si coinciden.</li>
+                    <li><strong>Acciones Remediales:</strong> Si el producto está descontinuado o ya no está disponible, utiliza el botón de <strong>'Inhabilitar Búsqueda'</strong> para desactivar su rastreo en el Worker.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Diagnóstico de Fallas",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
+    }
+}

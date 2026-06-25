@@ -1,169 +1,390 @@
 @page "/"
 @rendermode InteractiveServer
 @inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>Dashboard - Teocuitla</PageTitle>
 
-<div class="mb-6">
-    <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Panel de Control</MudText>
-    <MudText Typo="Typo.body2" Class="text-muted">Estado operativo del sistema de monitoreo de precios Teocuitla.</MudText>
+<div class="d-flex justify-space-between align-center mb-6">
+    <div>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Panel de Control</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+        </div>
+        <MudText Typo="Typo.body2" Class="text-muted">Estado operativo del sistema de monitoreo de precios Teocuitla.</MudText>
+    </div>
 </div>
 
-@if (_loading)
-{
-    <div class="d-flex justify-center my-12">
-        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
-    </div>
-}
-else
-{
-    <!-- CARDS DE ESTADÍSTICAS RÁPIDAS -->
-    <MudGrid Class="mb-6">
-        <MudItem xs="6" sm="3">
-            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
-                <MudIcon Icon="@Icons.Material.Filled.SettingsInputComponent" Color="Color.Primary" Size="Size.Medium" Class="mb-2" />
-                <MudText Typo="Typo.h5" Class="font-bold">@_totalSitios</MudText>
-                <MudText Typo="Typo.caption" Class="text-muted">Sitios Activos</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="6" sm="3">
-            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
-                <MudIcon Icon="@Icons.Material.Filled.ShoppingBag" Color="Color.Secondary" Size="Size.Medium" Class="mb-2" />
-                <MudText Typo="Typo.h5" Class="font-bold">@_totalProductos</MudText>
-                <MudText Typo="Typo.caption" Class="text-muted">Productos</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="6" sm="3">
-            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
-                <MudIcon Icon="@Icons.Material.Filled.Link" Color="Color.Info" Size="Size.Medium" Class="mb-2" />
-                <MudText Typo="Typo.h5" Class="font-bold">@_totalEnlaces</MudText>
-                <MudText Typo="Typo.caption" Class="text-muted">Enlaces Activos</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="6" sm="3">
-            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
-                <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Success" Size="Size.Medium" Class="mb-2" />
-                <MudText Typo="Typo.h5" Class="font-bold">@_totalHistorial</MudText>
-                <MudText Typo="Typo.caption" Class="text-muted">Registros Precios</MudText>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
-
-    <MudGrid>
-        <!-- ALERTAS Y RECIENTES CAMBIOS DE PRECIO -->
-        <MudItem xs="12" md="7">
-            <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Últimas Variaciones de Precio</MudText>
-            
-            @if (_cambiosRecientes.Count == 0)
+<!-- CARDS DE ESTADÍSTICAS RÁPIDAS -->
+<MudGrid Class="mb-6">
+    <MudItem xs="6" sm="3">
+        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+            <MudIcon Icon="@Icons.Material.Filled.SettingsInputComponent" Color="Color.Primary" Size="Size.Medium" Class="mb-2" />
+            @if (_totalSitios == null)
             {
-                <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
-                    <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Color="Color.Default" Class="mb-2" />
-                    <MudText Typo="Typo.body2" Class="text-muted">Sin variaciones de precio registradas recientemente.</MudText>
-                </MudPaper>
+                <div class="d-flex justify-center my-1">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalSitios</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="text-muted">Sitios Activos</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+            <MudIcon Icon="@Icons.Material.Filled.ShoppingBag" Color="Color.Secondary" Size="Size.Medium" Class="mb-2" />
+            @if (_totalProductos == null)
+            {
+                <div class="d-flex justify-center my-1">
+                    <MudProgressCircular Color="Color.Secondary" Size="Size.Small" Indeterminate="true" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalProductos</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="text-muted">Productos</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+            <MudIcon Icon="@Icons.Material.Filled.Link" Color="Color.Info" Size="Size.Medium" Class="mb-2" />
+            @if (_totalEnlaces == null)
+            {
+                <div class="d-flex justify-center my-1">
+                    <MudProgressCircular Color="Color.Info" Size="Size.Small" Indeterminate="true" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalEnlaces</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="text-muted">Enlaces Activos</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+            <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Success" Size="Size.Medium" Class="mb-2" />
+            @if (_totalHistorial == null)
+            {
+                <div class="d-flex justify-center my-1">
+                    <MudProgressCircular Color="Color.Success" Size="Size.Small" Indeterminate="true" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalHistorial</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="text-muted">Registros Precios</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    <!-- ALERTAS Y RECIENTES CAMBIOS DE PRECIO -->
+    <MudItem xs="12" md="7">
+        <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Últimas Variaciones de Precio</MudText>
+        
+        @if (_cambiosRecientes == null)
+        {
+            <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <div class="d-flex justify-center align-center gap-2">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2" Class="text-muted">Cargando variaciones...</MudText>
+                </div>
+            </MudPaper>
+        }
+        else if (_cambiosRecientes.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudIcon Icon="@Icons.Material.Filled.TrendingFlat" Color="Color.Default" Class="mb-2" />
+                <MudText Typo="Typo.body2" Class="text-muted">Sin variaciones de precio registradas recientemente.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-3">
+                @foreach (var c in _cambiosRecientes)
+                {
+                    var diff = (c.PrecioActual ?? 0) - (c.PrecioAnterior ?? 0);
+                    var isDrop = diff < 0;
+
+                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                        <div class="d-flex align-center justify-space-between gap-3">
+                            <div class="truncate-container" style="max-width: 65%;">
+                                <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@c.Nombre</MudText>
+                                <MudText Typo="Typo.caption" Class="text-muted">
+                                    @(c.CatalogoSitio?.Nombre ?? "Tienda") • SKU: @c.Sku
+                                </MudText>
+                            </div>
+                            <div class="text-right">
+                                <div class="d-flex align-center justify-end gap-1">
+                                    <MudText Typo="Typo.subtitle1" Class="font-bold">
+                                        $@(c.PrecioActual?.ToString("F2") ?? "0.00")
+                                    </MudText>
+                                    <MudIcon Icon="@(isDrop ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward)" 
+                                             Color="@(isDrop ? Color.Success : Color.Error)" 
+                                             Size="Size.Small" />
+                                </div>
+                                <MudText Typo="Typo.caption" Class="@(isDrop ? "mud-text-success font-bold" : "mud-text-error font-bold")">
+                                    @(isDrop ? "Bajo" : "Subió") $@(Math.Abs(diff).ToString("F2"))
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+            </div>
+        }
+    </MudItem>
+
+    <!-- OPERACIÓN Y PROXIES -->
+    <MudItem xs="12" md="5">
+        <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Estado del Rastreador (Worker)</MudText>
+        <MudCard Outlined="true" Class="border border-solid mud-border-default mb-6" Style="background: var(--mud-palette-surface);">
+            <MudCardContent>
+                <div class="d-flex align-center gap-3 mb-4">
+                    <MudProgressCircular Color="Color.Success" Value="100" Size="Size.Small" Indeterminate="false" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Class="font-bold">Worker Local</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Activo y escuchando cola</MudText>
+                    </div>
+                </div>
+                
+                <MudDivider Class="my-3" />
+                
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.body2" Class="text-muted">Pool de Proxies:</MudText>
+                    @if (_proxiesActivos == null)
+                    {
+                        <MudProgressCircular Color="Color.Default" Size="Size.Small" Indeterminate="true" style="width: 16px; height: 16px;" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="font-bold">@_proxiesActivos Activos</MudText>
+                    }
+                </div>
+                
+                <div class="d-flex align-center justify-space-between">
+                    <MudText Typo="Typo.body2" Class="text-muted">Latencia Promedio:</MudText>
+                    @if (_proxiesActivos == null || _latenciaPromedio == null)
+                    {
+                        <MudProgressCircular Color="Color.Default" Size="Size.Small" Indeterminate="true" style="width: 16px; height: 16px;" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="font-bold mud-text-success">@_latenciaPromedio ms</MudText>
+                    }
+                </div>
+            </MudCardContent>
+        </MudCard>
+
+        <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Distribución por Tienda</MudText>
+        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+            @if (_sitioDistribucion == null)
+            {
+                <div class="d-flex justify-center align-center gap-2 py-4">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2" Class="text-muted">Cargando distribución...</MudText>
+                </div>
+            }
+            else if (_sitioDistribucion.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="text-muted text-center py-4">Sin datos de distribución.</MudText>
             }
             else
             {
                 <div class="d-flex flex-column gap-3">
-                    @foreach (var c in _cambiosRecientes)
+                    @foreach (var item in _sitioDistribucion)
                     {
-                        var diff = (c.PrecioActual ?? 0) - (c.PrecioAnterior ?? 0);
-                        var isDrop = diff < 0;
-
-                        <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
-                            <div class="d-flex align-center justify-space-between gap-3">
-                                <div class="truncate-container" style="max-width: 65%;">
-                                    <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@c.Nombre</MudText>
-                                    <MudText Typo="Typo.caption" Class="text-muted">
-                                        @(c.CatalogoSitio?.Nombre ?? "Tienda") • SKU: @c.Sku
-                                    </MudText>
-                                </div>
-                                <div class="text-right">
-                                    <div class="d-flex align-center justify-end gap-1">
-                                        <MudText Typo="Typo.subtitle1" Class="font-bold">
-                                            $@(c.PrecioActual?.ToString("F2") ?? "0.00")
-                                        </MudText>
-                                        <MudIcon Icon="@(isDrop ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward)" 
-                                                 Color="@(isDrop ? Color.Success : Color.Error)" 
-                                                 Size="Size.Small" />
-                                    </div>
-                                    <MudText Typo="Typo.caption" Class="@(isDrop ? "mud-text-success font-bold" : "mud-text-error font-bold")">
-                                        @(isDrop ? "Bajo" : "Subió") $@(Math.Abs(diff).ToString("F2"))
-                                    </MudText>
-                                </div>
+                        var pct = (_totalEnlaces ?? 0) > 0 ? (double)item.Value / (_totalEnlaces ?? 0) * 100 : 0;
+                        <div>
+                            <div class="d-flex align-center justify-space-between mb-1">
+                                <MudText Typo="Typo.body2" Class="font-medium">@item.Key</MudText>
+                                <MudText Typo="Typo.caption" Class="text-muted">@item.Value (@pct.ToString("F0")%)</MudText>
                             </div>
-                        </MudPaper>
+                            <MudProgressLinear Color="Color.Primary" Value="@pct" Class="rounded-sm" Size="Size.Small" />
+                        </div>
                     }
                 </div>
             }
-        </MudItem>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
 
-        <!-- OPERACIÓN Y PROXIES -->
-        <MudItem xs="12" md="5">
-            <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Estado del Rastreador (Worker)</MudText>
-            <MudCard Outlined="true" Class="border border-solid mud-border-default mb-6" Style="background: var(--mud-palette-surface);">
-                <MudCardContent>
-                    <div class="d-flex align-center gap-3 mb-4">
-                        <MudProgressCircular Color="Color.Success" Value="100" Size="Size.Small" Indeterminate="false" />
-                        <div>
-                            <MudText Typo="Typo.subtitle2" Class="font-bold">Worker Local</MudText>
-                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Activo y escuchando cola</MudText>
-                        </div>
-                    </div>
-                    
-                    <MudDivider Class="my-3" />
-                    
-                    <div class="d-flex align-center justify-space-between mb-2">
-                        <MudText Typo="Typo.body2" Class="text-muted">Pool de Proxies:</MudText>
-                        <MudText Typo="Typo.body2" Class="font-bold">@_proxiesActivos Activos</MudText>
-                    </div>
-                    
-                    <div class="d-flex align-center justify-space-between">
-                        <MudText Typo="Typo.body2" Class="text-muted">Latencia Promedio:</MudText>
-                        <MudText Typo="Typo.body2" Class="font-bold mud-text-success">@_latenciaPromedio ms</MudText>
-                    </div>
-                </MudCardContent>
-            </MudCard>
-
-            <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Distribución por Tienda</MudText>
-            <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
-                @if (_sitioDistribucion.Count == 0)
+<!-- SECCIÓN DE PROCESOS RECIENTES, ERRORES Y LÍMITES -->
+<MudGrid Class="mt-4">
+    <!-- RASTREOS RECIENTES -->
+    <MudItem xs="12" md="6">
+        <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Rastreos Recientes (Ejecuciones)</MudText>
+        @if (_intentosRecientes == null)
+        {
+            <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <div class="d-flex justify-center align-center gap-2">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2" Class="text-muted">Cargando rastreos...</MudText>
+                </div>
+            </MudPaper>
+        }
+        else if (_intentosRecientes.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudIcon Icon="@Icons.Material.Filled.RunningWithErrors" Color="Color.Default" Class="mb-2" />
+                <MudText Typo="Typo.body2" Class="text-muted">No se han registrado ejecuciones de rastreo recientemente.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-3">
+                @foreach (var v in _intentosRecientes)
                 {
-                    <MudText Typo="Typo.body2" Class="text-muted text-center py-4">Sin datos de distribución.</MudText>
+                    var tieneFalla = _fallasDeIntentos.Any(f => f.VarianteComercialId == v.Id && (v.UltimaActualizacion == null || f.FechaFalla >= v.UltimaActualizacion));
+                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                        <div class="d-flex align-center justify-space-between gap-3">
+                            <div class="truncate-container" style="max-width: 60%;">
+                                <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@v.Nombre</MudText>
+                                <MudText Typo="Typo.caption" Class="text-muted">
+                                    @(v.CatalogoSitio?.Nombre ?? "Tienda") • SKU: @v.Sku
+                                </MudText>
+                            </div>
+                            <div class="text-right">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                         Color="@(tieneFalla ? Color.Error : Color.Success)"
+                                         Icon="@(tieneFalla ? Icons.Material.Filled.Error : Icons.Material.Filled.CheckCircle)"
+                                         Class="mb-1 font-bold">
+                                    @(tieneFalla ? "Fallo" : "Éxito")
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Class="text-muted d-block">
+                                    @v.FechaUltimoIntento?.ToLocalTime().ToString("dd/MM HH:mm")
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+            </div>
+        }
+    </MudItem>
+
+    <!-- LÍMITES Y ERRORES -->
+    <MudItem xs="12" md="6">
+        <!-- LÍMITES DE RASTREO -->
+        <div class="d-flex align-center justify-space-between mb-3">
+            <MudText Typo="Typo.subtitle1" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Límites Diarios de Scraping (Bloqueos)</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="ResetearLimitesDiariosAsync" StartIcon="@Icons.Material.Filled.Refresh" Disabled="_resettingLimites">
+                @if (_resettingLimites)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                    <span>Reseteando...</span>
                 }
                 else
                 {
-                    <div class="d-flex flex-column gap-3">
-                        @foreach (var item in _sitioDistribucion)
-                        {
-                            var pct = _totalEnlaces > 0 ? (double)item.Value / _totalEnlaces * 100 : 0;
-                            <div>
-                                <div class="d-flex align-center justify-space-between mb-1">
-                                    <MudText Typo="Typo.body2" Class="font-medium">@item.Key</MudText>
-                                    <MudText Typo="Typo.caption" Class="text-muted">@item.Value (@pct.ToString("F0")%)</MudText>
-                                </div>
-                                <MudProgressLinear Color="Color.Primary" Value="@pct" Class="rounded-sm" Size="Size.Small" />
-                            </div>
-                        }
-                    </div>
+                    <span>Resetear Límites</span>
                 }
+            </MudButton>
+        </div>
+        @if (_variantesLimiteExcedido == null)
+        {
+            <MudPaper Outlined="true" Class="pa-4 text-center border border-solid mud-border-default mb-6" Style="background: var(--mud-palette-surface);">
+                <div class="d-flex justify-center align-center gap-2">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2" Class="text-muted">Cargando límites...</MudText>
+                </div>
             </MudPaper>
-        </MudItem>
-    </MudGrid>
-}
+        }
+        else if (_variantesLimiteExcedido.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-6 border border-solid" Style="background: var(--mud-palette-surface); border-color: var(--mud-palette-success);">
+                <div class="d-flex flex-column gap-1">
+                    <MudText Typo="Typo.body2" Class="font-medium">Todos los productos se encuentran dentro de los límites de scraping diarios (máximo 10 intentos por variante).</MudText>
+                </div>
+            </MudAlert>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4 border border-solid" Style="background: var(--mud-palette-surface); border-color: var(--mud-palette-warning);">
+                <div class="d-flex flex-column gap-1">
+                    <MudText Typo="Typo.subtitle2" Class="font-bold">Límite Alcanzado (@_variantesLimiteExcedido.Count)</MudText>
+                    <MudText Typo="Typo.body2">Las siguientes variantes comerciales alcanzaron el límite máximo de 10 intentos diarios de scraping debido a fallos recurrentes de extracción o captchas. El Worker ha suspendido su rastreo hasta mañana.</MudText>
+                </div>
+            </MudAlert>
+            <div class="d-flex flex-column gap-2 mb-6" style="max-height: 200px; overflow-y: auto;">
+                @foreach (var v in _variantesLimiteExcedido)
+                {
+                    <MudPaper Outlined="true" Class="pa-2 px-3 border border-solid mud-border-default d-flex align-center justify-space-between" Style="background: var(--mud-palette-surface);">
+                        <div class="truncate-container" style="max-width: 70%;">
+                            <MudText Typo="Typo.body2" Class="font-bold truncate-text">@v.Nombre</MudText>
+                            <MudText Typo="Typo.caption" Class="text-muted">@(v.CatalogoSitio?.Nombre ?? "Tienda") • SKU: @v.Sku</MudText>
+                        </div>
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Class="font-bold">
+                            @v.IntentosDiaActual / 10 Int.
+                        </MudChip>
+                    </MudPaper>
+                }
+            </div>
+        }
+
+        <!-- ERRORES RECIENTES -->
+        <MudText Typo="Typo.subtitle1" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Errores de Scraping Recientes</MudText>
+        @if (_fallasRecientes == null)
+        {
+            <MudPaper Outlined="true" Class="pa-6 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <div class="d-flex justify-center align-center gap-2">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2" Class="text-muted">Cargando errores...</MudText>
+                </div>
+            </MudPaper>
+        }
+        else if (_fallasRecientes.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="pa-6 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Class="mb-2" />
+                <MudText Typo="Typo.body2" Class="text-muted">Sin errores de scraping registrados recientemente.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-2">
+                @foreach (var f in _fallasRecientes)
+                {
+                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface); border-left: 4px solid var(--mud-palette-error) !important;">
+                        <div class="d-flex justify-space-between align-start gap-2">
+                            <div class="truncate-container" style="max-width: 75%;">
+                                <MudText Typo="Typo.body2" Class="font-bold truncate-text">@(f.VarianteComercial?.Nombre ?? "Variante Eliminada")</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-error font-medium d-block truncate-text">@f.ErrorMensaje</MudText>
+                            </div>
+                            <MudText Typo="Typo.caption" Class="text-muted whitespace-nowrap">
+                                @f.FechaFalla.ToLocalTime().ToString("dd/MM HH:mm")
+                            </MudText>
+                        </div>
+                    </MudPaper>
+                }
+            </div>
+        }
+    </MudItem>
+</MudGrid>
 
 @code {
-    private bool _loading = true;
-    
-    // Estadísticas
-    private int _totalSitios;
-    private int _totalProductos;
-    private int _totalEnlaces;
-    private long _totalHistorial;
-    private int _proxiesActivos;
-    private int _latenciaPromedio;
+    // Estadísticas nullables para representar estado de carga individual
+    private int? _totalSitios;
+    private int? _totalProductos;
+    private int? _totalEnlaces;
+    private long? _totalHistorial;
+    private int? _proxiesActivos;
+    private int? _latenciaPromedio;
 
-    private List<VarianteComercial> _cambiosRecientes = new();
-    private Dictionary<string, int> _sitioDistribucion = new();
+    private List<VarianteComercial>? _cambiosRecientes;
+    private Dictionary<string, int>? _sitioDistribucion;
+
+    // Listas de monitoreo nullables
+    private List<VarianteComercial>? _intentosRecientes;
+    private List<RegistroFallaScraping>? _fallasRecientes;
+    private List<VarianteComercial>? _variantesLimiteExcedido;
+    private List<RegistroFallaScraping> _fallasDeIntentos = new();
+    
+    private bool _resettingLimites = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -172,36 +393,306 @@ else
 
     private async Task LoadDashboardData()
     {
-        _loading = true;
-        using var context = await DbFactory.CreateDbContextAsync();
-
-        _totalSitios = await context.CatalogoSitios.CountAsync(s => s.Activo);
-        _totalProductos = await context.ProductosMaestros.CountAsync();
-        _totalEnlaces = await context.VariantesComerciales.CountAsync();
-        _totalHistorial = await context.HistorialPrecios.CountAsync();
+        // Inicializamos los datos en null para indicar que están cargando
+        _totalSitios = null;
+        _totalProductos = null;
+        _totalEnlaces = null;
+        _totalHistorial = null;
+        _proxiesActivos = null;
+        _latenciaPromedio = null;
+        _cambiosRecientes = null;
+        _sitioDistribucion = null;
+        _intentosRecientes = null;
+        _fallasRecientes = null;
+        _variantesLimiteExcedido = null;
         
-        var proxies = await context.RegistroProxies.Where(p => p.Activo && !p.Baneado).ToListAsync();
-        _proxiesActivos = proxies.Count;
-        _latenciaPromedio = proxies.Any() ? (int)proxies.Average(p => p.LatenciaMs) : 0;
+        StateHasChanged();
 
-        // Cambios de precio recientes (donde precio actual difiere del anterior)
-        _cambiosRecientes = await context.VariantesComerciales
-            .Include(v => v.CatalogoSitio)
-            .Where(v => v.PrecioActual != null && v.PrecioAnterior != null && v.PrecioActual != v.PrecioAnterior)
-            .OrderByDescending(v => v.UltimaActualizacion)
-            .Take(5)
-            .ToListAsync();
+        // Ejecutamos cada consulta en segundo plano de forma independiente.
+        // Cada una actualizará su variable y refrescará la UI de inmediato al terminar.
 
-        // Distribución por sitio
-        var variantesConSitio = await context.VariantesComerciales
-            .Include(v => v.CatalogoSitio)
-            .ToListAsync();
+        // 1. Sitios Activos
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                _totalSitios = await context.CatalogoSitios.AsNoTracking().CountAsync(s => s.Activo);
+            }
+            catch { _totalSitios = 0; }
+            await InvokeAsync(StateHasChanged);
+        });
 
-        _sitioDistribucion = variantesConSitio
-            .GroupBy(v => v.CatalogoSitio?.Nombre ?? "Desconocido")
-            .ToDictionary(g => g.Key, g => g.Count());
+        // 2. Productos
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                if (context.Database.IsSqlServer())
+                {
+                    _totalProductos = (int)await GetSqlServerRowCountAsync(context, "Productos_Maestros");
+                }
+                else
+                {
+                    _totalProductos = await context.ProductosMaestros.AsNoTracking().CountAsync();
+                }
+            }
+            catch { _totalProductos = 0; }
+            await InvokeAsync(StateHasChanged);
+        });
 
-        _loading = false;
+        // 3. Enlaces
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                if (context.Database.IsSqlServer())
+                {
+                    _totalEnlaces = (int)await GetSqlServerRowCountAsync(context, "Variantes_Comerciales");
+                }
+                else
+                {
+                    _totalEnlaces = await context.VariantesComerciales.AsNoTracking().CountAsync();
+                }
+            }
+            catch { _totalEnlaces = 0; }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 4. Historial
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                if (context.Database.IsSqlServer())
+                {
+                    _totalHistorial = await GetSqlServerRowCountAsync(context, "Historial_Precios");
+                }
+                else
+                {
+                    _totalHistorial = await context.HistorialPrecios.AsNoTracking().CountAsync();
+                }
+            }
+            catch { _totalHistorial = 0L; }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 5. Proxies y Latencia
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                var list = await context.RegistroProxies.AsNoTracking().Where(p => p.Activo && !p.Baneado).ToListAsync();
+                _proxiesActivos = list.Count;
+                _latenciaPromedio = list.Any() ? (int)list.Average(p => p.LatenciaMs) : 0;
+            }
+            catch 
+            { 
+                _proxiesActivos = 0; 
+                _latenciaPromedio = 0;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 6. Cambios Recientes
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadUncommitted);
+                _cambiosRecientes = await context.VariantesComerciales.AsNoTracking()
+                    .Include(v => v.CatalogoSitio)
+                    .Where(v => v.PrecioActual != null && v.PrecioAnterior != null && v.PrecioActual != v.PrecioAnterior)
+                    .OrderByDescending(v => v.UltimaActualizacion)
+                    .Take(5)
+                    .ToListAsync();
+                await transaction.CommitAsync();
+            }
+            catch { _cambiosRecientes = new(); }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 7. Distribución por Sitio
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadUncommitted);
+                var list = await context.VariantesComerciales.AsNoTracking()
+                    .GroupBy(v => v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Desconocido")
+                    .Select(g => new { Site = g.Key, Count = g.Count() })
+                    .ToListAsync();
+                await transaction.CommitAsync();
+                _sitioDistribucion = list.ToDictionary(x => x.Site, x => x.Count);
+            }
+            catch { _sitioDistribucion = new(); }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 8. Intentos Recientes e Intentos de Fallas
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadUncommitted);
+                var intentos = await context.VariantesComerciales.AsNoTracking()
+                    .Include(v => v.CatalogoSitio)
+                    .Where(v => v.FechaUltimoIntento != null)
+                    .OrderByDescending(v => v.FechaUltimoIntento)
+                    .Take(5)
+                    .ToListAsync();
+                
+                List<RegistroFallaScraping> fallas = new();
+                if (intentos.Any())
+                {
+                    var idsIntentos = intentos.Select(i => i.Id).ToList();
+                    fallas = await context.RegistroFallasScraping.AsNoTracking()
+                        .Where(f => idsIntentos.Contains(f.VarianteComercialId))
+                        .ToListAsync();
+                }
+                await transaction.CommitAsync();
+                
+                _intentosRecientes = intentos;
+                _fallasDeIntentos = fallas;
+            }
+            catch 
+            { 
+                _intentosRecientes = new(); 
+                _fallasDeIntentos = new();
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 9. Errores Recientes de Scraping
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadUncommitted);
+                _fallasRecientes = await context.RegistroFallasScraping.AsNoTracking()
+                    .Include(f => f.VarianteComercial)
+                    .ThenInclude(v => v!.CatalogoSitio)
+                    .OrderByDescending(f => f.FechaFalla)
+                    .Take(5)
+                    .ToListAsync();
+                await transaction.CommitAsync();
+            }
+            catch { _fallasRecientes = new(); }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 10. Variantes Límite Excedido
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                using var transaction = await context.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadUncommitted);
+                _variantesLimiteExcedido = await context.VariantesComerciales.AsNoTracking()
+                    .Include(v => v.CatalogoSitio)
+                    .Where(v => v.Activo && v.IntentosDiaActual >= 10)
+                    .OrderByDescending(v => v.FechaUltimoIntento)
+                    .ToListAsync();
+                await transaction.CommitAsync();
+            }
+            catch { _variantesLimiteExcedido = new(); }
+            await InvokeAsync(StateHasChanged);
+        });
+        
+        await Task.CompletedTask;
+    }
+
+    private async Task ResetearLimitesDiariosAsync()
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Confirmar Reinicio",
+            "¿Desea reiniciar el contador diario de intentos de scraping a 0 para todas las variantes? Esto reactivará el rastreo inmediato de los productos bloqueados.",
+            yesText: "Sí, reiniciar",
+            cancelText: "Cancelar"
+        );
+
+        if (confirm == true)
+        {
+            _resettingLimites = true;
+            StateHasChanged();
+
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(10);
+                await context.Database.ExecuteSqlRawAsync("UPDATE Variantes_Comerciales SET IntentosDiaActual = 0");
+                Snackbar.Add("Los límites diarios de intentos se han reiniciado correctamente.", Severity.Success);
+                
+                // Recargar el panel de forma asíncrona
+                await LoadDashboardData();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al reiniciar límites diarios: {ex.Message}", Severity.Error);
+            }
+            finally
+            {
+                _resettingLimites = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task<long> GetSqlServerRowCountAsync(TeocuitlaDbContext context, string tableName)
+    {
+        try
+        {
+            var sql = $@"
+                SELECT CAST(SUM(p.rows) AS BIGINT) AS Value
+                FROM sys.partitions AS p
+                INNER JOIN sys.tables AS t ON p.object_id = t.object_id
+                WHERE t.name = '{tableName}' AND p.index_id IN (0, 1);";
+
+            var count = await context.Database.SqlQueryRaw<long>(sql).FirstOrDefaultAsync();
+            return count;
+        }
+        catch
+        {
+            // Fallback silencioso a 0 si ocurre alguna anomalía con el comando directo
+            return 0;
+        }
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para utilizar el Panel de Control:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Monitoreo general:</strong> Revisa el estado de salud de los sitios activos, productos registrados, enlaces y el volumen del historial de precios.</li>
+                    <li><strong>Estado de Proxies:</strong> Observa la cantidad de proxies activos y la latencia de red promedio en milisegundos.</li>
+                    <li><strong>Monitoreo de Cambios:</strong> Examina la tabla de fluctuaciones de precios más recientes detectadas en el motor de rastreo.</li>
+                    <li><strong>Distribución de Enlaces:</strong> Revisa la gráfica circular de distribución para entender qué proporción de tus variantes comerciales corresponden a cada portal.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Panel de Control",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
     }
 }
 

@@ -158,15 +158,30 @@
 
     private void Cancel() => MudDialog.Cancel();
 
+    private string GetFriendlyFieldName(string propertyName)
+    {
+        return propertyName switch
+        {
+            nameof(Sitio.SelectorNombreXPath) => "Selector del Nombre del Producto",
+            nameof(Sitio.SelectorPrecioXPath) => "Selector de Precio",
+            nameof(Sitio.SelectorStockXPath) => "Selector de Stock (Disponibilidad)",
+            nameof(Sitio.SelectorProductoXPath) => "Selector de Contenedor de Producto",
+            nameof(Sitio.SelectorImagenXPath) => "Selector de Imagen del Producto",
+            _ => "Selector"
+        };
+    }
+
     private async Task LaunchVisualSelector(string propertyName)
     {
+        var friendlyName = GetFriendlyFieldName(propertyName);
         var parameters = new DialogParameters<SelectorVisualDialog>
         {
-            { x => x.InitialUrl, Sitio.UrlBase }
+            { x => x.InitialUrl, Sitio.UrlBase },
+            { x => x.FieldName, friendlyName }
         };
 
         var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Large, FullWidth = true };
-        var dialog = await DialogService.ShowAsync<SelectorVisualDialog>("Asistente de Selección Visual", parameters, options);
+        var dialog = await DialogService.ShowAsync<SelectorVisualDialog>($"Asistente: {friendlyName}", parameters, options);
         var result = await dialog.Result;
 
         if (result != null && !result.Canceled && result.Data is string selector)

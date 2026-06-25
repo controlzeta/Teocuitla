@@ -128,10 +128,10 @@ namespace Teocuitla.Worker
             var now = DateTime.UtcNow;
             bool testMode = _configuration.GetValue<bool>("Scraping:TestMode", false);
 
-            // Cargar todas las variantes asociadas a sitios activos
+            // Cargar todas las variantes asociadas a sitios activos que estén activas
             var allVariantes = await context.VariantesComerciales
                 .Include(v => v.CatalogoSitio)
-                .Where(v => v.CatalogoSitio != null && v.CatalogoSitio.Activo)
+                .Where(v => v.CatalogoSitio != null && v.CatalogoSitio.Activo && v.Activo)
                 .ToListAsync();
 
             // Filtrar en memoria por intervalo

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Teocuitla.Shared.Data;
 
@@ -11,9 +12,11 @@ using Teocuitla.Shared.Data;
 namespace Teocuitla.Web.Migrations
 {
     [DbContext(typeof(TeocuitlaDbContext))]
-    partial class TeocuitlaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260625151445_AddActivoToVarianteComercial")]
+    partial class AddActivoToVarianteComercial
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

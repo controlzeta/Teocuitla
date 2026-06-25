@@ -19,3 +19,8 @@
 /.vs/Teocuitla/DesignTimeBuild
 /.vs/Teocuitla/config
 /.vs/ProjectEvaluation
+/Teocuitla.Web/bin/Release/net9.0
+/Teocuitla.Shared/bin/Release/net9.0
+/Teocuitla.Tests/bin/Release/net9.0
+/Teocuitla.Worker/bin/Release/net9.0
+/Teocuitla.Worker/Properties/PublishProfiles

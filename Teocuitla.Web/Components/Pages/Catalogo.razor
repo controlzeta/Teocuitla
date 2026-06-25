@@ -12,7 +12,10 @@
     <MudItem xs="12" md="5" Class="@(_showDetails ? "mobile-hide-list" : "d-block")">
         <div class="d-flex align-center justify-space-between mb-4">
             <div>
-                <MudText Typo="Typo.h5" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Catálogo</MudText>
+                <div class="d-flex align-center gap-2">
+                    <MudText Typo="Typo.h5" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Catálogo</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+                </div>
                 <MudText Typo="Typo.caption" Class="text-muted">Lista general de productos monitoreados.</MudText>
             </div>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="OpenAddProductoDialog">
@@ -116,7 +119,15 @@
                                             <MudText Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 180px;">SKU: @v.Sku</MudText>
                                         </CardHeaderContent>
                                         <CardHeaderActions>
-                                            @if (v.EnStock)
+                                            @if (!v.Activo)
+                                            {
+                                                <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Inactivo</MudChip>
+                                            }
+                                            else if (_variantFallaIds.ContainsKey(v.Id))
+                                            {
+                                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled" Class="font-bold">Error Rastreo</MudChip>
+                                            }
+                                            else if (v.EnStock)
                                             {
                                                 <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Stock</MudChip>
                                             }
@@ -169,7 +180,13 @@
                                         </div>
                                     </MudCardContent>
                                     <MudCardActions Class="py-1 px-3 border-t border-solid mud-border-default justify-space-between">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Size="Size.Small" Color="Color.Primary" Href="@v.UrlProducto" Target="_blank" />
+                                        <div class="d-flex gap-1">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Launch" Size="Size.Small" Color="Color.Primary" Href="@v.UrlProducto" Target="_blank" />
+                                            @if (v.Activo && _variantFallaIds.TryGetValue(v.Id, out var fallaId))
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.BugReport" Size="Size.Small" Color="Color.Warning" Tooltip="Diagnosticar Falla" OnClick="@(() => DiagnosticarFalla(fallaId))" />
+                                            }
+                                        </div>
                                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteVariante(v))" />
                                     </MudCardActions>
                                 </MudCard>
@@ -271,6 +288,7 @@
     
     private ProductoMaestro? _selectedProducto;
     private List<VarianteComercial> _variantes = new();
+    private Dictionary<int, int> _variantFallaIds = new(); // key: VarianteComercialId, value: FallaId
     private bool _showDetails = false;
 
     // Gráfica
@@ -343,6 +361,25 @@
             .Include(v => v.CatalogoSitio)
             .Where(v => v.ProductoMaestroId == _selectedProducto.Id)
             .ToListAsync();
+
+        // Cargar los IDs de fallas activas para estas variantes
+        var varianteIds = _variantes.Select(v => v.Id).ToList();
+        if (varianteIds.Count > 0)
+        {
+            var fallas = await context.RegistroFallasScraping
+                .Where(f => varianteIds.Contains(f.VarianteComercialId))
+                .Select(f => new { f.VarianteComercialId, f.Id })
+                .ToListAsync();
+            
+            // Tomar el id de falla más reciente para cada variante
+            _variantFallaIds = fallas
+                .GroupBy(f => f.VarianteComercialId)
+                .ToDictionary(g => g.Key, g => g.Max(f => f.Id));
+        }
+        else
+        {
+            _variantFallaIds.Clear();
+        }
 
         await LoadChartData(context);
     }
@@ -530,6 +567,42 @@
             Snackbar.Add("Enlace eliminado.", Severity.Success);
             await LoadProductoDetalle();
         }
+    }
+
+    private async Task DiagnosticarFalla(int fallaId)
+    {
+        var parameters = new DialogParameters<FallaReviewDialog>
+        {
+            { x => x.FallaId, fallaId }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FallaReviewDialog>("Revisión y Corrección de Falla", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadProductoDetalle();
+        }
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para utilizar la pantalla de Catálogo:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Gestión de Productos:</strong> Utiliza el botón <strong>'Nuevo'</strong> en la esquina superior derecha para registrar un producto maestro.</li>
+                    <li><strong>Selección y Navegación:</strong> Toca un producto de la lista izquierda para cargar el panel de detalles a la derecha (en móviles se adapta automáticamente).</li>
+                    <li><strong>Variantes Comerciales:</strong> En el detalle, observa las tiendas asociadas y su precio actual. El icono de insecto/bug te llevará directamente a diagnosticar fallas de rastreo si existen.</li>
+                    <li><strong>Edición de Selectores:</strong> Usa el menú de tres puntos en cada variante para abrir el <strong>Asistente de Selección Visual</strong> y capturar interactivamente XPath o CSS en vivo.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Catálogo de Productos",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
     }
 }
 

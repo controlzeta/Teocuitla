@@ -6,12 +6,16 @@
 @inject IWebHostEnvironment Env
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-12">
     <!-- TITULO DE PÁGINA -->
     <div class="d-flex justify-space-between align-center mb-6">
         <div>
-            <MudText Typo="Typo.h4" Class="font-bold">Monitoreo de Logs Estructurados</MudText>
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.h4" Class="font-bold">Monitoreo de Logs Estructurados</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+            </div>
             <MudText Typo="Typo.body2" Class="text-muted">Visualiza, filtra y descarga trazas unificadas del Servidor Web y el Crawler local.</MudText>
         </div>
         <MudButton Variant="Variant.Filled" 
@@ -336,5 +340,24 @@
         {
             Snackbar.Add($"Error al generar la descarga: {ex.Message}", Severity.Error);
         }
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para monitorear los logs estructurados del sistema:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Filtrado Temporal:</strong> Selecciona el Año y el Mes para cargar las trazas correspondientes desde el almacenamiento local del servidor.</li>
+                    <li><strong>Nivel de Severidad:</strong> Filtra por Información, Advertencia o Error para depurar anomalías de manera rápida.</li>
+                    <li><strong>Buscador en Vivo:</strong> Escribe palabras clave (como SKUs, dominios, o excepciones específicas) para filtrar en tiempo real los registros visibles.</li>
+                    <li><strong>Descarga e Historial:</strong> Utiliza el botón <strong>'Descargar Log Filtrado'</strong> para guardar un archivo de texto plano con los registros filtrados en tu máquina.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Monitoreo de Logs",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
     }
 }

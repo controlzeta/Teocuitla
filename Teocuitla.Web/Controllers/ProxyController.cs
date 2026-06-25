@@ -212,6 +212,8 @@ namespace Teocuitla.Web.Controllers
         }
 
         [HttpPost("manual")]
+        [DisableRequestSizeLimit]
+        [RequestFormLimits(ValueLengthLimit = 104857600)] // 100MB para soportar HTMLs masivos
         public IActionResult LoadManualHtml([FromForm] string html, [FromForm] string? url)
         {
             if (string.IsNullOrWhiteSpace(html))
@@ -519,7 +521,8 @@ namespace Teocuitla.Web.Controllers
                 type: 'teocuitla-selector-selected',
                 xpath: xpath,
                 css: css,
-                text: textValue.trim().substring(0, 100)
+                text: textValue.trim().substring(0, 100),
+                tagName: e.target.tagName ? e.target.tagName.toLowerCase() : ''
             }, '*');
 
             return false;

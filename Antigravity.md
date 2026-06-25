@@ -54,6 +54,7 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
 * **Responsividad**: El diseño del panel web debe ser estrictamente **Mobile-First**, optimizado para resoluciones móviles de alta densidad como la pantalla del Samsung Galaxy S24 Ultra. Utilizar los puntos de interrupción (`xs`, `sm`, `md`) de `MudGrid` para apilar componentes correctamente.
 * **Tema Oscuro**: Habilitar soporte nativo para transiciones de Modo Claro/Oscuro dinámicas vinculando la propiedad `IsDarkMode` de `MudThemeProvider`. El tema oscuro debe emplear **negro verdadero (#000000)** en su fondo para optimizar pantallas AMOLED.
 * **Captura de Selectores**: Mantener el funcionamiento de [SelectorVisualDialog.razor](file:///d:/Github/Teocuitla/Teocuitla.Web/Components/Pages/SelectorVisualDialog.razor), el cual utiliza un iframe canalizado a través del controlador proxy `/api/proxy`. Este inyecta scripts interactivos para que el usuario pueda tocar elementos de una página y capturar de forma automatizada su XPath o selector CSS.
+* **Botón de Ayuda y Modal Informativo**: Cada pantalla principal del sistema debe incluir un botón de ayuda con el icono `HelpOutline` (`@Icons.Material.Filled.HelpOutline`) ubicado al lado del título de la página. Al hacer clic en este botón, se debe abrir un cuadro de diálogo modal (utilizando `DialogService.ShowMessageBoxAsync`) con un contenido de tipo `MarkupString` que describa en pasos numerados y claros cómo utilizar la pantalla en cuestión, mejorando la usabilidad y la asistencia al operador.
 
 ---
 

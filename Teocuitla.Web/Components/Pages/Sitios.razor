@@ -9,7 +9,10 @@
 
 <div class="d-flex align-center justify-space-between mb-6">
     <div>
-        <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Sitios de E-Commerce</MudText>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Sitios de E-Commerce</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
+        </div>
         <MudText Typo="Typo.body2" Class="text-muted">Administra los portales comerciales y configura los selectores de scraping.</MudText>
     </div>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="(() => OpenSitioDialog(null))">
@@ -172,6 +175,25 @@ else
     {
         Snackbar.Add($"Iniciando prueba de scraping simulada para {sitio.Nombre}...", Severity.Info);
         // Aquí se simula la acción; en el futuro se puede agregar un WebSocket o llamada a probar selectores reales.
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>Sigue estos pasos para administrar tus sitios de e-commerce:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Agregar Portal:</strong> Haz clic en <strong>'Agregar Sitio'</strong> para registrar un nuevo dominio de comercio electrónico.</li>
+                    <li><strong>Configurar Selectores:</strong> Edita un sitio para configurar los selectores XPath o CSS base para Nombre, Precio, Stock e Imagen.</li>
+                    <li><strong>Parámetros de Evasión:</strong> Configura la frecuencia de scraping y la estrategia de evasión (estándar, Selenium, proxy) según el nivel de seguridad del portal.</li>
+                    <li><strong>Prueba y Validación:</strong> Utiliza el botón de prueba para simular ejecuciones del scraper con URLs de prueba y comprobar los selectores antes de activarlos.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Configuración de Sitios",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
     }
 }
 

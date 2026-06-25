@@ -6,6 +6,12 @@ using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Configurar el ciclo de vida como Servicio de Windows
+builder.Services.AddWindowsService(options =>
+{
+    options.ServiceName = "TeocuitlaWorker";
+});
+
 // Configurar Serilog con consola y HTTP sink
 var logsIngestionUrl = builder.Configuration["Logging:LogsIngestionUrl"] ?? "http://localhost:5181/api/logs";
 
