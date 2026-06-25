@@ -19,14 +19,14 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
 * **Lenguaje**: C#
 * **Plataforma**: .NET 9.0 (ASP.NET Core / Worker Service)
 * **ORM**: Entity Framework Core 9.0
-* **Base de Datos**: SQL Server (con alojamiento remoto)
+* **Base de Datos**: SQL Server (Producción con alojamiento remoto) y SQLite (Generación de esquema local y pruebas)
 * **Interfaz de Usuario**: Blazor Server & MudBlazor (v9.5.0)
 * **Scraping**: HtmlAgilityPack (fase ligera) y Selenium WebDriver con ChromeDriver (fase pesada)
-* **Suite de Pruebas**: xUnit, Moq y Microsoft.EntityFrameworkCore.InMemory (v9.0.17)
+* **Suite de Pruebas**: xUnit, Moq, Microsoft.EntityFrameworkCore.InMemory (v9.0.17) y SQLite local para validación física
 
 ---
 
-## 2. Reglas de la Base de Datos (SQL Server)
+## 2. Reglas de la Base de Datos (SQL Server y SQLite de Pruebas)
 
 * **Esquema Relacional**: Implementado de manera estricta mediante las siguientes tablas físicas:
   * `Catalogo_Sitios`: Configuraciones de selectores, intervalos de scraping y evasión por portal.
@@ -34,6 +34,7 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
   * `Variantes_Comerciales`: Enlace físico entre un producto maestro y una tienda específica (contiene SKUs y precios).
   * `Historial_Precios`: Registro temporal de variaciones de precios y stock.
   * `Registro_Proxies`: Almacén de proxies con latencia, fallas acumuladas y estado de baneo.
+  * `Registro_Fallas_Scraping`: Bitácora de errores que almacena excepciones, proxies, estrategias y respuestas HTML de fallos.
 
 * **Optimización del Historial**: Dado que `Historial_Precios` crece exponencialmente, se implementa la siguiente estrategia física:
   * Clave primaria `Id` configurada como **no agrupada** (*Non-Clustered*).
@@ -42,7 +43,7 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
   * Índice no agrupado `IX_Variantes_Comerciales_Sku` sobre la columna `Sku` en variantes comerciales para agilizar búsquedas.
 
 * **Reglas de Integridad Referencial**:
-  * Eliminación en cascada (*Cascade*) configurada en la relación `ProductoMaestro -> VarianteComercial` y `VarianteComercial -> HistorialPrecio`.
+  * Eliminación en cascada (*Cascade*) configurada en las relaciones `ProductoMaestro -> VarianteComercial`, `VarianteComercial -> HistorialPrecio` y `VarianteComercial -> RegistroFallaScraping`.
   * Eliminación restringida (*Restrict*) en la relación `CatalogoSitio -> VarianteComercial` para evitar huérfanos.
 
 ---
@@ -62,16 +63,33 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
   * **Fase Ligera (HttpClient + HtmlAgilityPack)**: Ejecutada de forma predeterminada para sitios con estrategia *"Standard"*. Utiliza peticiones HTTP directas con compresión automática (Brotli/Gzip) y suplantación de cabeceras (`User-Agent`, `Accept`).
   * **Fase Pesada (Selenium WebDriver)**: Activada como fallback o para portales con protecciones avanzadas. Utiliza Chrome de forma oculta configurando las ChromeOptions (`--headless=new`, `--disable-gpu`, `--no-sandbox`, `--disable-dev-shm-usage` y desactivación de imágenes para optimización de ancho de banda).
 
+* **Detección Dinámica de Bloqueos (AntibotDetector)**:
+  Antes, durante y después del scraping, el motor evalúa el HTML, los códigos de error HTTP y el título de la página. Si detecta firmas de Cloudflare (Turnstile, Ray ID), Akamai, PerimeterX o la necesidad de JavaScript en SPAs (vacíos tipo React/Angular), ajusta de manera adaptativa la estrategia requerida (`Cloudflare` o `Heavy-JS`) para la siguiente ejecución.
+
+* **Extractor Heurístico y Auto-Aprendizaje (HeuristicExtractor)**:
+  Cuando la extracción directa por selectores XPath/CSS falla, el sistema aplica extracción heurística en cascada:
+  1. **JSON-LD (Datos Estructurados)**: Analiza scripts `@type = "Product"` para capturar nombre, precio y disponibilidad.
+  2. **Meta Etiquetas (Open Graph)**: Inspecciona etiquetas meta de catálogo.
+  3. **Análisis Semántico del DOM**: Analiza heurísticamente elementos HTML de precio y stock.
+  * **Auto-Aprendizaje**: Si se logra extraer un precio mediante estas heurísticas pero no se tiene un selector válido configurado, el motor localiza dinámicamente el nodo visual del precio en el DOM y autogenera un XPath inteligente (`GetSmartXPath`) para ser propuesto o almacenado de forma automatizada.
+
 * **Parseo de Precios Adaptativo**:
   La función `ParsePrice` debe limpiar y procesar dinámicamente cadenas de texto de precios provenientes del HTML, manejando de forma automatizada formatos regionales:
   * **Formato US/UK** (ej. `"1,250.75"`): Donde la coma es separador de miles y el punto es decimal.
   * **Formato Español/Europeo** (ej. `"1.250,75"`): Donde el punto es separador de miles y la coma es decimal.
-  El motor debe evaluar cuál separador aparece al final de la cadena limpia para determinar el decimal.
+  * El motor debe evaluar cuál separador aparece al final de la cadena limpia para determinar el decimal.
+
+* **Auditoría de Fallas de Scraping**:
+  Si el rastreo de una variante comercial falla persistentemente tras reintentos, el Worker almacena un registro en `Registro_Fallas_Scraping` guardando la URL, el mensaje de error de la excepción, el proxy utilizado, la estrategia activa y el HTML completo capturado en el instante del fallo para permitir análisis offline del desarrollador.
 
 * **Rotación y Salud de Proxies**:
   * **Rotación Round-Robin**: Los proxies activos y no baneados se rotan secuencialmente, registrando el timestamp de su último uso.
   * **Auto-Baneo**: Si un proxy acumula 5 fallos consecutivos durante el scraping, se marca automáticamente como `Baneado = true`.
   * **Recuperación**: Los usos exitosos restablecen el contador de fallos a 0 y actualizan la latencia de red (`LatenciaMs`).
+
+* **Transmisión Eficiente de Logs e Ingesta Masiva**:
+  * El Worker envía periódicamente un streaming de sus logs en segundo plano al panel de control mediante el endpoint `/api/logs/ingestion` expuesto por `LogsIngestionController.cs`, permitiendo su visualización interactiva en la página de Logs.
+  * La transmisión de lotes de precios desde el Worker hacia la API Web `/api/ingestion/bulk` se realiza aplicando codificación y compresión **GZIP** en el cuerpo de la petición HTTP, asegurando un alto rendimiento de red y optimización en el consumo de ancho de banda.
 
 ---
 

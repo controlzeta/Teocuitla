@@ -2,7 +2,7 @@
 
 Este archivo describe la estructura física, entidades, columnas, relaciones y optimizaciones de índices implementadas en la base de datos de **Teocuitla**.
 
-Adicionalmente, se ha generado el archivo binario independiente **[DBSchema.db](file:///d:/Github/Teocuitla/DBSchema.db)** en la raíz del repositorio. Este archivo es una base de datos física **SQLite** completamente funcional que contiene exactamente las tablas, llaves primarias, llaves foráneas, relaciones e índices que se detallan a continuación, permitiendo su importación y visualización en cualquier gestor de bases de datos (como DBeaver o DB Browser for SQLite).
+Adicionalmente, se ha generado el archivo binario independiente **[DBSchema.db](file:///d:/Github/Teocuitla/DBSchema.db)** en la raíz del repositorio. Este archivo es una base de datos física **SQLite** completamente funcional que contiene exactamente las tablas, llaves primarias, llaves foráneas, relaciones e índices que se detallan a continuación, permitiendo su importación y visualización en cualquier gestor de bases de datos (como DBeaver o DB Browser for SQLite). Se puede regenerar o actualizar de forma automática ejecutando la prueba unitaria `GenerateSqliteDb` en el proyecto **Teocuitla.Tests**.
 
 ---
 
@@ -13,6 +13,7 @@ erDiagram
     Productos_Maestros ||--o{ Variantes_Comerciales : "1 a N (Cascade)"
     Catalogo_Sitios ||--o{ Variantes_Comerciales : "1 a N (Restrict)"
     Variantes_Comerciales ||--o{ Historial_Precios : "1 a N (Cascade)"
+    Variantes_Comerciales ||--o{ Registro_Fallas_Scraping : "1 a N (Cascade)"
     Registro_Proxies {
         int Id PK
         string Ip
@@ -64,6 +65,16 @@ erDiagram
         decimal Precio
         bit EnStock
         datetime FechaCaptura
+    }
+    Registro_Fallas_Scraping {
+        int Id PK
+        int VarianteComercialId FK
+        datetime FechaFalla
+        string UrlProducto
+        string ErrorMensaje
+        string ProxyUtilizado
+        string EstrategiaEvasion
+        string HtmlContenido
     }
 ```
 
@@ -127,6 +138,17 @@ Tabla de soporte de red para la rotación de IPs del scraper.
 * **`FallosAcumulados`** `(int, Not Null)`: Contador de errores consecutivos (se banea al llegar a 5).
 * **`UltimoUso`** `(datetime2, Nullable)`: Timestamp del último uso en rotación.
 * **`Baneado`** `(bit, Not Null)`: Indica si el proxy fue bloqueado automáticamente por fallos recurrentes o baneo de IP.
+
+### 6. `Registro_Fallas_Scraping`
+Bitácora de errores de scraping utilizada para almacenar y auditar los fallos que ocurren durante la ejecución del rastreador.
+* **`Id`** `(int, PK, Identity)`: Identificador único del registro de falla.
+* **`VarianteComercialId`** `(int, FK, Not Null)`: Relación hacia la entidad `Variantes_Comerciales`.
+* **`FechaFalla`** `(datetime2, Not Null)`: Timestamp en formato UTC de cuándo se presentó el error.
+* **`UrlProducto`** `(nvarchar(1000), Not Null)`: Dirección URL de la variante comercial en la que ocurrió el fallo.
+* **`ErrorMensaje`** `(nvarchar(max), Not Null)`: Mensaje descriptivo o excepción técnica detallando la causa del fallo.
+* **`ProxyUtilizado`** `(nvarchar(100), Nullable)`: Dirección IP y puerto del proxy utilizado al momento de la falla (si aplica).
+* **`EstrategiaEvasion`** `(nvarchar(50), Nullable)`: Estrategia de evasión activa durante la falla (`"Standard"`, `"Cloudflare"`, `"Heavy-JS"`, etc.).
+* **`HtmlContenido`** `(nvarchar(max), Not Null)`: Captura completa del código fuente HTML de la página web al momento de ocurrir el error, útil para depuración de selectores desactualizados o bloqueos.
 
 ---
 
