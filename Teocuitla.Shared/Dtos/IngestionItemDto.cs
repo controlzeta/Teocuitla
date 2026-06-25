@@ -8,5 +8,6 @@ namespace Teocuitla.Shared.Dtos
         public decimal Precio { get; set; }
         public bool EnStock { get; set; }
         public DateTime FechaCaptura { get; set; }
+        public string? ImagenUrl { get; set; }
     }
 }

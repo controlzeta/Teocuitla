@@ -48,7 +48,7 @@ namespace Teocuitla.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Worker de Scraping Teocuitla iniciado en segundo plano.");
+            _logger.LogInformation("Worker de Scraping Teocuitla v{Version} iniciado en segundo plano.", Teocuitla.Shared.AppVersion.Version);
 
             int maxParallel = _configuration.GetValue<int>("Scraping:MaxParallelScrapers", 3);
 
@@ -207,7 +207,8 @@ namespace Teocuitla.Worker
                                     VarianteComercialId = variante.Id,
                                     Precio = scrapResult.Precio,
                                     EnStock = scrapResult.EnStock,
-                                    FechaCaptura = DateTime.UtcNow
+                                    FechaCaptura = DateTime.UtcNow,
+                                    ImagenUrl = scrapResult.ImagenUrl
                                 });
 
                                 if (proxy != null)

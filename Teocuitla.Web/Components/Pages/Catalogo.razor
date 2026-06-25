@@ -127,35 +127,45 @@
                                         </CardHeaderActions>
                                     </MudCardHeader>
                                     <MudCardContent Class="py-2 px-3">
-                                        <div class="d-flex align-end justify-space-between">
-                                            <div>
-                                                <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Actual</MudText>
-                                                <MudText Typo="Typo.h5" Class="font-bold text-primary">
-                                                    @(v.PrecioActual.HasValue ? $"${v.PrecioActual:F2}" : "Sin datos")
-                                                </MudText>
-                                            </div>
-                                            @if (v.PrecioActual.HasValue && v.PrecioAnterior.HasValue)
+                                        <div class="d-flex gap-3 align-center">
+                                            @if (!string.IsNullOrWhiteSpace(v.ImagenUrl))
                                             {
-                                                var diff = v.PrecioActual.Value - v.PrecioAnterior.Value;
-                                                <div class="text-right">
-                                                    @if (diff < 0)
-                                                    {
-                                                        <span class="mud-text-success font-bold d-flex align-center gap-1">
-                                                            <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" /> @($"${Math.Abs(diff):F2}")
-                                                        </span>
-                                                    }
-                                                    else if (diff > 0)
-                                                    {
-                                                        <span class="mud-text-error font-bold d-flex align-center gap-1">
-                                                            <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" /> @($"${diff:F2}")
-                                                        </span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="text-muted">Sin cambio</span>
-                                                    }
+                                                <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 70px; height: 70px; background: white; padding: 4px; overflow: hidden; flex-shrink: 0;">
+                                                    <img src="@v.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen de producto" />
                                                 </div>
                                             }
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-end justify-space-between">
+                                                    <div>
+                                                        <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Actual</MudText>
+                                                        <MudText Typo="Typo.h5" Class="font-bold text-primary">
+                                                            @(v.PrecioActual.HasValue ? $"${v.PrecioActual:F2}" : "Sin datos")
+                                                        </MudText>
+                                                    </div>
+                                                    @if (v.PrecioActual.HasValue && v.PrecioAnterior.HasValue)
+                                                    {
+                                                        var diff = v.PrecioActual.Value - v.PrecioAnterior.Value;
+                                                        <div class="text-right">
+                                                            @if (diff < 0)
+                                                            {
+                                                                <span class="mud-text-success font-bold d-flex align-center gap-1">
+                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" /> @($"${Math.Abs(diff):F2}")
+                                                                </span>
+                                                            }
+                                                            else if (diff > 0)
+                                                            {
+                                                                <span class="mud-text-error font-bold d-flex align-center gap-1">
+                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" /> @($"${diff:F2}")
+                                                                </span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="text-muted">Sin cambio</span>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
                                         </div>
                                     </MudCardContent>
                                     <MudCardActions Class="py-1 px-3 border-t border-solid mud-border-default justify-space-between">

@@ -8,7 +8,10 @@
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Inherit" Class="border-b border-solid mud-border-default">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-        <MudText Typo="Typo.h6" Class="ml-3 font-bold" Style="font-family: 'Outfit', sans-serif;">TEOCUITLA</MudText>
+        <MudText Typo="Typo.h6" Class="ml-3 font-bold" Style="font-family: 'Outfit', sans-serif;">
+            TEOCUITLA
+            <span style="font-size: 0.75rem; font-weight: 500; opacity: 0.6; margin-left: 6px; letter-spacing: 0.5px;">v@(Teocuitla.Shared.AppVersion.Version)</span>
+        </MudText>
         <MudSpacer />
         <MudToggleIconButton @bind-Toggled="@_isDarkMode"
                              Icon="@Icons.Material.Filled.LightMode" Color="Color.Warning"
@@ -24,6 +27,10 @@
             <MudNavLink Href="/proxies" Icon="@Icons.Material.Filled.VpnLock">Registro Proxies</MudNavLink>
             <MudNavLink Href="/admin/logs" Icon="@Icons.Material.Filled.ReceiptLong">Historial de Logs</MudNavLink>
         </MudNavMenu>
+        <MudSpacer />
+        <div class="pa-4 border-t border-solid mud-border-default text-center">
+            <MudText Typo="Typo.caption" Class="text-muted font-medium">Teocuitla v@(Teocuitla.Shared.AppVersion.Version)</MudText>
+        </div>
     </MudDrawer>
 
     <MudMainContent Class="mud-background-gray">

@@ -81,7 +81,8 @@ namespace Teocuitla.Web.Controllers
                             VarianteId INT,
                             Precio DECIMAL(18,2),
                             EnStock BIT,
-                            Fecha DATETIME2
+                            Fecha DATETIME2,
+                            ImagenUrl NVARCHAR(1000) NULL
                         );";
                     await createTempTableCmd.ExecuteNonQueryAsync();
 
@@ -91,10 +92,11 @@ namespace Teocuitla.Web.Controllers
                     dataTable.Columns.Add("Precio", typeof(decimal));
                     dataTable.Columns.Add("EnStock", typeof(bool));
                     dataTable.Columns.Add("Fecha", typeof(DateTime));
+                    dataTable.Columns.Add("ImagenUrl", typeof(string));
 
                     foreach (var item in items)
                     {
-                        dataTable.Rows.Add(item.VarianteComercialId, item.Precio, item.EnStock, item.FechaCaptura);
+                        dataTable.Rows.Add(item.VarianteComercialId, item.Precio, item.EnStock, item.FechaCaptura, item.ImagenUrl);
                     }
 
                     // 3. Insertar masivamente en la tabla temporal
@@ -105,6 +107,7 @@ namespace Teocuitla.Web.Controllers
                         bulkCopy.ColumnMappings.Add("Precio", "Precio");
                         bulkCopy.ColumnMappings.Add("EnStock", "EnStock");
                         bulkCopy.ColumnMappings.Add("Fecha", "Fecha");
+                        bulkCopy.ColumnMappings.Add("ImagenUrl", "ImagenUrl");
 
                         await bulkCopy.WriteToServerAsync(dataTable);
                     }
@@ -124,7 +127,8 @@ namespace Teocuitla.Web.Controllers
                             V.PrecioAnterior = V.PrecioActual,
                             V.PrecioActual = T.Precio,
                             V.EnStock = T.EnStock,
-                            V.UltimaActualizacion = T.Fecha
+                            V.UltimaActualizacion = T.Fecha,
+                            V.ImagenUrl = COALESCE(T.ImagenUrl, V.ImagenUrl)
                         FROM Variantes_Comerciales V
                         INNER JOIN #TempIngest T ON V.Id = T.VarianteId;
 

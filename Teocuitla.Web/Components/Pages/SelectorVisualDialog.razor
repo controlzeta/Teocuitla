@@ -37,16 +37,12 @@
                         <MudText Typo="Typo.body2" Class="text-muted mb-2">
                             Si el sitio bloquea la carga automatizada, abre el producto en tu navegador, copia el código fuente HTML completo (Ctrl+U) y pégalo aquí.
                         </MudText>
-                        <MudTextField @bind-Value="_manualHtml" 
-                                       Label="Pegar Código HTML Completo" 
-                                       Placeholder="<html>..."
-                                       Variant="Variant.Outlined" 
-                                       Lines="6" 
-                                       MaxLines="10"
-                                       Margin="Margin.Dense"
-                                       Class="mb-2" />
+                        <textarea id="manual-html-textarea" 
+                                  placeholder="Pega el código HTML completo aquí (<html>...)" 
+                                  class="w-full p-3 rounded border border-solid mud-border-default mb-2" 
+                                  style="width: 100%; min-height: 150px; background: var(--mud-palette-surface); color: var(--mud-palette-text-primary); font-family: 'Courier New', Courier, monospace; font-size: 0.85rem; border-color: var(--mud-palette-divider); outline: none; resize: vertical;"></textarea>
                         <div class="d-flex justify-end">
-                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="CargarHtmlManual" Disabled="@(string.IsNullOrWhiteSpace(_manualHtml))">
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="CargarHtmlManual">
                                 Procesar y Visualizar HTML
                             </MudButton>
                         </div>
@@ -122,7 +118,6 @@
     private string _proxyUrl = string.Empty;
     private bool _loadingPage = false;
     private bool _showManualHtmlPanel = false;
-    private string _manualHtml = string.Empty;
     
     // Datos de captura
     private string _capturedXpath = string.Empty;
@@ -195,12 +190,6 @@
 
     private async Task CargarHtmlManual()
     {
-        if (string.IsNullOrWhiteSpace(_manualHtml))
-        {
-            Snackbar.Add("Por favor pega el código HTML primero.", Severity.Warning);
-            return;
-        }
-
         _loadingPage = true;
         _capturedSelector = string.Empty;
 
@@ -213,9 +202,18 @@
 
         try
         {
-            // Enviar el HTML y la URL de referencia a través de JS al proxy POST /api/proxy/manual
-            await JS.InvokeVoidAsync("teocuitlaSubmitManualHtml", _manualHtml, _testUrl);
-            Snackbar.Add("HTML manual cargado e inyectado correctamente.", Severity.Success);
+            // Enviar el HTML y la URL de referencia a través de JS leyendo directamente del DOM
+            var exito = await JS.InvokeAsync<bool>("teocuitlaSubmitManualHtmlFromElement", "manual-html-textarea", _testUrl);
+            if (exito)
+            {
+                Snackbar.Add("HTML manual cargado e inyectado correctamente.", Severity.Success);
+            }
+            else
+            {
+                _loadingPage = false;
+                StateHasChanged();
+                Snackbar.Add("Por favor pega el código HTML primero.", Severity.Warning);
+            }
         }
         catch (Exception ex)
         {

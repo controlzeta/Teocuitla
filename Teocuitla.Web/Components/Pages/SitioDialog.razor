@@ -102,6 +102,18 @@
                                               AdornmentColor="Color.Primary"
                                               OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorProductoXPath)))" />
                             </MudItem>
+
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="Sitio.SelectorImagenXPath" 
+                                              Label="Selector de Imagen del Producto" 
+                                              Placeholder='@("Ej. //img[@id=\'landingImage\'] o img.product-image")'
+                                              HelperText="Extrae la URL de la imagen del producto (src, data-src, etc.)."
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End"
+                                              AdornmentIcon="@Icons.Material.Filled.TouchApp"
+                                              AdornmentColor="Color.Primary"
+                                              OnAdornmentClick="@(() => LaunchVisualSelector(nameof(Sitio.SelectorImagenXPath)))" />
+                            </MudItem>
                         </MudGrid>
                     </div>
                 </MudTabPanel>
@@ -172,6 +184,9 @@
                     break;
                 case nameof(Sitio.SelectorProductoXPath):
                     Sitio.SelectorProductoXPath = selector;
+                    break;
+                case nameof(Sitio.SelectorImagenXPath):
+                    Sitio.SelectorImagenXPath = selector;
                     break;
             }
             
@@ -285,6 +300,24 @@
             else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorProductoXPath))
             {
                 Snackbar.Add("El selector de Contenedor de producto no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
+                return false;
+            }
+        }
+
+        // Validar Selector de Imagen
+        if (!string.IsNullOrWhiteSpace(Sitio.SelectorImagenXPath))
+        {
+            if (SelectorValidator.EsSelectorXPath(Sitio.SelectorImagenXPath))
+            {
+                if (!SelectorValidator.IsValidXPath(Sitio.SelectorImagenXPath))
+                {
+                    Snackbar.Add("El selector de Imagen no es un XPath válido. Revisa la sintaxis.", Severity.Error);
+                    return false;
+                }
+            }
+            else if (!SelectorValidator.IsValidCssSelector(Sitio.SelectorImagenXPath))
+            {
+                Snackbar.Add("El selector de Imagen no es un selector CSS válido. Revisa la sintaxis.", Severity.Error);
                 return false;
             }
         }

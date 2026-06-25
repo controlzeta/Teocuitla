@@ -28,6 +28,7 @@ namespace Teocuitla.Worker.Services
         public string? ErrorMensaje { get; set; }
         public string? LearnedSelector { get; set; }
         public string? RecommendedStrategy { get; set; }
+        public string? ImagenUrl { get; set; }
     }
 
     public class ScraperService
@@ -226,7 +227,8 @@ namespace Teocuitla.Worker.Services
                             LatenciaMs = (int)stopwatch.ElapsedMilliseconds,
                             ErrorMensaje = $"Extraido via heuristica ({heuristic.MetodoDeteccion})",
                             LearnedSelector = heuristic.XPathSugerido, // Pasar el selector aprendido
-                            RecommendedStrategy = recommendedStrategy
+                            RecommendedStrategy = recommendedStrategy,
+                            ImagenUrl = !string.IsNullOrEmpty(heuristic.ImagenUrl) ? MakeAbsoluteUrl(heuristic.ImagenUrl, sitio.UrlBase) : null
                         };
                     }
                 }
@@ -316,11 +318,37 @@ namespace Teocuitla.Worker.Services
                     }
                 }
 
+                string? imagenUrl = null;
+                if (!string.IsNullOrWhiteSpace(sitio.SelectorImagenXPath) && SelectorValidator.EsSelectorXPath(sitio.SelectorImagenXPath))
+                {
+                    try
+                    {
+                        var imgNode = doc.DocumentNode.SelectSingleNode(sitio.SelectorImagenXPath);
+                        if (imgNode != null)
+                        {
+                            imagenUrl = imgNode.Attributes["src"]?.Value 
+                                        ?? imgNode.Attributes["data-src"]?.Value 
+                                        ?? imgNode.Attributes["href"]?.Value 
+                                        ?? imgNode.InnerText.Trim();
+                            
+                            if (!string.IsNullOrEmpty(imagenUrl))
+                            {
+                                imagenUrl = MakeAbsoluteUrl(imagenUrl, sitio.UrlBase);
+                            }
+                        }
+                    }
+                    catch (Exception imgEx)
+                    {
+                        _logger.LogWarning("Falla al extraer imagen con selector en HttpClient: {Message}", imgEx.Message);
+                    }
+                }
+
                 return new ScraperResult
                 {
                     Exitoso = true,
                     Precio = precioDecimal.Value,
-                    EnStock = enStock
+                    EnStock = enStock,
+                    ImagenUrl = imagenUrl
                 };
             }
             catch (Exception ex)
@@ -546,11 +574,40 @@ namespace Teocuitla.Worker.Services
                     }
                 }
 
+                string? imagenUrl = null;
+                if (!string.IsNullOrWhiteSpace(sitio.SelectorImagenXPath))
+                {
+                    try
+                    {
+                        By imgLocator = SelectorValidator.EsSelectorXPath(sitio.SelectorImagenXPath)
+                            ? By.XPath(sitio.SelectorImagenXPath)
+                            : By.CssSelector(sitio.SelectorImagenXPath);
+                        
+                        var imgElement = driver.FindElement(imgLocator);
+                        if (imgElement != null)
+                        {
+                            imagenUrl = imgElement.GetAttribute("src") 
+                                        ?? imgElement.GetAttribute("data-src") 
+                                        ?? imgElement.GetAttribute("href");
+                            
+                            if (!string.IsNullOrEmpty(imagenUrl))
+                            {
+                                imagenUrl = MakeAbsoluteUrl(imagenUrl, sitio.UrlBase);
+                            }
+                        }
+                    }
+                    catch (Exception imgEx)
+                    {
+                        _logger.LogWarning("Falla al extraer imagen con selector en Selenium: {Message}", imgEx.Message);
+                    }
+                }
+
                 return new ScraperResult
                 {
                     Exitoso = true,
                     Precio = precioDecimal.Value,
-                    EnStock = enStock
+                    EnStock = enStock,
+                    ImagenUrl = imagenUrl
                 };
             }
             catch (Exception ex)
@@ -682,6 +739,29 @@ namespace Teocuitla.Worker.Services
                 "Standard" => 1,
                 _ => 1
             };
+        }
+
+        private static string MakeAbsoluteUrl(string url, string baseUrl)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return url;
+            url = url.Trim();
+            if (url.StartsWith("//"))
+            {
+                return "https:" + url;
+            }
+            if (url.StartsWith("/"))
+            {
+                try
+                {
+                    var uri = new Uri(baseUrl);
+                    return $"{uri.Scheme}://{uri.Host}{url}";
+                }
+                catch
+                {
+                    return url;
+                }
+            }
+            return url;
         }
     }
 }

@@ -57,3 +57,18 @@ window.teocuitlaSubmitManualHtml = (html, url) => {
     form.submit();
 };
 
+window.teocuitlaSubmitManualHtmlFromElement = (textareaId, url) => {
+    const textarea = document.getElementById(textareaId);
+    if (!textarea) {
+        console.error('Textarea no encontrado:', textareaId);
+        return false;
+    }
+    const html = textarea.value;
+    if (!html || html.trim() === '') {
+        return false;
+    }
+    window.teocuitlaSubmitManualHtml(html, url);
+    return true;
+};
+
+

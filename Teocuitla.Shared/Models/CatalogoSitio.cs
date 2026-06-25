@@ -34,6 +34,9 @@ namespace Teocuitla.Shared.Models
         [MaxLength(500)]
         public string SelectorNombreXPath { get; set; } = string.Empty;
 
+        [MaxLength(500)]
+        public string SelectorImagenXPath { get; set; } = string.Empty;
+
         [Required]
         [MaxLength(50)]
         public string EstrategiaEvasion { get; set; } = "Standard"; // Standard, Cloudflare, Heavy-JS, etc.

@@ -37,7 +37,11 @@ builder.Services.AddHttpClient();
 builder.Services.AddControllers();
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddHubOptions(options =>
+    {
+        options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10 MB to support pasting large manual HTML source codes
+    });
 
 var app = builder.Build();
 

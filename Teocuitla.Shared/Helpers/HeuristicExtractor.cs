@@ -12,6 +12,7 @@ namespace Teocuitla.Shared.Helpers
         public decimal? Precio { get; set; }
         public bool EnStock { get; set; } = true;
         public string? XPathSugerido { get; set; }
+        public string? ImagenUrl { get; set; }
         public string MetodoDeteccion { get; set; } = "Ninguno";
     }
 
@@ -104,6 +105,18 @@ namespace Teocuitla.Shared.Helpers
                     result.Nombre = nameProp.GetString();
                 }
 
+                if (elem.TryGetProperty("image", out var imageProp))
+                {
+                    if (imageProp.ValueKind == JsonValueKind.String)
+                    {
+                        result.ImagenUrl = imageProp.GetString();
+                    }
+                    else if (imageProp.ValueKind == JsonValueKind.Array && imageProp.GetArrayLength() > 0)
+                    {
+                        result.ImagenUrl = imageProp[0].GetString();
+                    }
+                }
+
                 if (elem.TryGetProperty("offers", out var offersProp))
                 {
                     if (offersProp.ValueKind == JsonValueKind.Object)
@@ -161,6 +174,14 @@ namespace Teocuitla.Shared.Helpers
                 result.Nombre = titleNode.GetAttributeValue("content", "").Trim();
             }
 
+            var imgNode = doc.DocumentNode.SelectSingleNode("//meta[@property='og:image']") 
+                          ?? doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:image']")
+                          ?? doc.DocumentNode.SelectSingleNode("//meta[@name='image']");
+            if (imgNode != null)
+            {
+                result.ImagenUrl = imgNode.Attributes["content"]?.Value;
+            }
+
             var priceNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:price:amount']")
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@property='og:price:amount']")
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:data1']");
@@ -212,6 +233,14 @@ namespace Teocuitla.Shared.Helpers
             if (pageText.Contains("agotado") || pageText.Contains("sin stock") || pageText.Contains("no disponible") || pageText.Contains("out of stock"))
             {
                 result.EnStock = false;
+            }
+
+            var mainImg = doc.DocumentNode.SelectSingleNode("//img[contains(@class, 'product') or contains(@id, 'product') or contains(@src, 'product')]")
+                          ?? doc.DocumentNode.SelectSingleNode("//img[@id='landingImage' or @id='main-image' or @class='front-image']");
+            if (mainImg != null)
+            {
+                result.ImagenUrl = mainImg.Attributes["src"]?.Value 
+                                   ?? mainImg.Attributes["data-src"]?.Value;
             }
 
             if (h1Node != null)

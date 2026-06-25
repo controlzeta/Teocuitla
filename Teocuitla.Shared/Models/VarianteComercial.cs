@@ -49,6 +49,9 @@ namespace Teocuitla.Shared.Models
 
         public DateTime? FechaUltimoIntento { get; set; }
 
+        [MaxLength(1000)]
+        public string? ImagenUrl { get; set; }
+
         public ICollection<HistorialPrecio> HistorialPrecios { get; set; } = new List<HistorialPrecio>();
     }
 }

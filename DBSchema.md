@@ -44,6 +44,7 @@ erDiagram
         string SelectorPrecioXPath
         string SelectorStockXPath
         string SelectorNombreXPath
+        string SelectorImagenXPath
         string EstrategiaEvasion
         datetime UltimoRastreo
     }
@@ -57,6 +58,7 @@ erDiagram
         decimal PrecioActual
         decimal PrecioAnterior
         bit EnStock
+        string ImagenUrl
         datetime UltimaActualizacion
     }
     Historial_Precios {
@@ -102,6 +104,7 @@ Almacena los portales de e-commerce donde se realizarán las tareas de scraping,
 * **`SelectorPrecioXPath`** `(nvarchar(500), Not Null)`: Selector XPath o CSS para extraer el precio del producto.
 * **`SelectorStockXPath`** `(nvarchar(500), Empty)`: Selector para evaluar la disponibilidad de stock.
 * **`SelectorNombreXPath`** `(nvarchar(500), Empty)`: Selector para capturar el nombre específico en tienda.
+* **`SelectorImagenXPath`** `(nvarchar(500), Empty)`: Selector XPath o CSS para extraer la imagen del producto (src, data-src, etc.).
 * **`EstrategiaEvasion`** `(nvarchar(50), Not Null)`: Nivel de seguridad anti-bot requerido (`"Standard"`, `"Cloudflare"`, `"Heavy-JS"`, etc.).
 * **`UltimoRastreo`** `(datetime2, Nullable)`: Timestamp de la última vez que el Worker procesó este sitio.
 
@@ -116,6 +119,7 @@ Constituye la presencia real de un producto maestro en una tienda específica. V
 * **`PrecioActual`** `(decimal(18,2), Nullable)`: Último precio extraído exitosamente.
 * **`PrecioAnterior`** `(decimal(18,2), Nullable)`: Precio registrado en el rastreo previo (para calcular fluctuaciones).
 * **`EnStock`** `(bit, Not Null)`: Estado de disponibilidad física del producto.
+* **`ImagenUrl`** `(nvarchar(1000), Nullable)`: Enlace directo a la imagen del producto (src, data-src, etc.).
 * **`UltimaActualizacion`** `(datetime2, Nullable)`: Timestamp del último rastreo exitoso de esta variante.
 
 ### 4. `Historial_Precios`

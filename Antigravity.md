@@ -31,7 +31,7 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
 * **Esquema Relacional**: Implementado de manera estricta mediante las siguientes tablas físicas:
   * `Catalogo_Sitios`: Configuraciones de selectores, intervalos de scraping y evasión por portal.
   * `Productos_Maestros`: Catálogo principal de productos a monitorear.
-  * `Variantes_Comerciales`: Enlace físico entre un producto maestro y una tienda específica (contiene SKUs y precios).
+  * `Variantes_Comerciales`: Enlace físico entre un producto maestro y una tienda específica (contiene SKUs, precios e imágenes).
   * `Historial_Precios`: Registro temporal de variaciones de precios y stock.
   * `Registro_Proxies`: Almacén de proxies con latencia, fallas acumuladas y estado de baneo.
   * `Registro_Fallas_Scraping`: Bitácora de errores que almacena excepciones, proxies, estrategias y respuestas HTML de fallos.
@@ -68,9 +68,9 @@ Teocuitla está estructurado bajo un esquema limpio y distribuido en los siguien
 
 * **Extractor Heurístico y Auto-Aprendizaje (HeuristicExtractor)**:
   Cuando la extracción directa por selectores XPath/CSS falla, el sistema aplica extracción heurística en cascada:
-  1. **JSON-LD (Datos Estructurados)**: Analiza scripts `@type = "Product"` para capturar nombre, precio y disponibilidad.
-  2. **Meta Etiquetas (Open Graph)**: Inspecciona etiquetas meta de catálogo.
-  3. **Análisis Semántico del DOM**: Analiza heurísticamente elementos HTML de precio y stock.
+  1. **JSON-LD (Datos Estructurados)**: Analiza scripts `@type = "Product"` para capturar nombre, precio, disponibilidad e imagen.
+  2. **Meta Etiquetas (Open Graph)**: Inspecciona etiquetas meta de catálogo (incluyendo `og:image` y `twitter:image`).
+  3. **Análisis Semántico del DOM**: Analiza heurísticamente elementos HTML de precio, stock y busca imágenes de producto mediante clases o IDs descriptivos.
   * **Auto-Aprendizaje**: Si se logra extraer un precio mediante estas heurísticas pero no se tiene un selector válido configurado, el motor localiza dinámicamente el nodo visual del precio en el DOM y autogenera un XPath inteligente (`GetSmartXPath`) para ser propuesto o almacenado de forma automatizada.
 
 * **Parseo de Precios Adaptativo**:

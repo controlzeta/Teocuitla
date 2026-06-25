@@ -17,7 +17,7 @@ La capa de dominio y persistencia común para toda la solución. Contiene:
 El portal administrativo e interfaz de usuario construida con **ASP.NET Core Blazor Server** y estilizada con **MudBlazor**. Sus funciones principales son:
 * **Dashboard Interactivo**: Métricas rápidas del sistema (sitios activos, proxies operativos, total de productos y variantes).
 * **Gestión de Proxies**: Monitoreo en tiempo real del estado de la red de proxies, latencias y tasas de fallos.
-* **Catálogo y Configuración**: Definición de selectores XPath por sitio web (`SelectorPrecioXPath`, `SelectorStockXPath`, `SelectorNombreXPath`) y estrategias de evasión de bloqueos.
+* **Catálogo y Configuración**: Definición de selectores XPath por sitio web (`SelectorPrecioXPath`, `SelectorStockXPath`, `SelectorNombreXPath`, `SelectorImagenXPath`) y estrategias de evasión de bloqueos.
 * **Consola de Logs**: Visualización integrada y en tiempo real de la actividad y diagnósticos del motor de rastreo.
 * **Ingestion API**: Controladores REST para recibir datos comprimidos con GZIP de forma externa y registrar logs de ejecución.
 
