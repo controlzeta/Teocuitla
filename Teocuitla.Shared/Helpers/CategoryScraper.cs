@@ -146,40 +146,46 @@ namespace Teocuitla.Shared.Helpers
                             string? link = null;
                             if (linkSelector == "self" || linkSelector == ".")
                             {
-                                link = cardNode.Attributes["href"]?.Value ?? cardNode.GetAttributeValue("href", null);
+                                link = GetFirstNonEmptyAttribute(cardNode, "href");
                             }
                             else if (!string.IsNullOrWhiteSpace(linkSelector))
                             {
                                 var linkNode = cardNode.SelectSingleNode(linkSelector);
-                                link = linkNode?.Attributes["href"]?.Value ?? linkNode?.GetAttributeValue("href", null);
+                                if (linkNode != null)
+                                {
+                                    link = GetFirstNonEmptyAttribute(linkNode, "href");
+                                }
                             }
                             
                             // Si no se obtuvo enlace, intentar un fallback rápido al primer tag 'a'
                             if (string.IsNullOrEmpty(link))
                             {
                                 var fallbackLinkNode = cardNode.Name == "a" ? cardNode : cardNode.SelectSingleNode(".//a[@href]");
-                                link = fallbackLinkNode?.Attributes["href"]?.Value;
+                                if (fallbackLinkNode != null)
+                                {
+                                    link = GetFirstNonEmptyAttribute(fallbackLinkNode, "href");
+                                }
                             }
 
                             if (string.IsNullOrEmpty(link)) continue;
                             link = MakeAbsoluteUrl(link, sitio.UrlBase);
 
-                            // Extraer Nombre
+                            // Extraer Nombre (con decodificación completa de entidades HTML)
                             string nombre = string.Empty;
                             if (!string.IsNullOrWhiteSpace(nombreSelector))
                             {
                                 var nombreNode = cardNode.SelectSingleNode(nombreSelector);
-                                nombre = nombreNode?.InnerText?.Trim() ?? string.Empty;
+                                nombre = nombreNode != null ? HtmlEntity.DeEntitize(nombreNode.InnerText).Trim() : string.Empty;
                             }
                             if (string.IsNullOrEmpty(nombre))
                             {
                                 // Fallback a texto del link o primer encabezado
                                 var fallbackNameNode = cardNode.SelectSingleNode(".//h3") ?? cardNode.SelectSingleNode(".//h2") ?? cardNode.SelectSingleNode(".//a");
-                                nombre = fallbackNameNode?.InnerText?.Trim() ?? string.Empty;
+                                nombre = fallbackNameNode != null ? HtmlEntity.DeEntitize(fallbackNameNode.InnerText).Trim() : string.Empty;
                             }
                             if (string.IsNullOrEmpty(nombre)) continue;
 
-                            // Extraer Precio
+                            // Extraer Precio con Heurística de Mínimo Precio (Dual Pricing)
                             decimal precio = 0;
                             if (!string.IsNullOrWhiteSpace(precioSelector))
                             {
@@ -192,19 +198,80 @@ namespace Teocuitla.Shared.Helpers
                                 }
                             }
 
-                            // Extraer Imagen
+                            // Si no se obtuvo precio o es 0, intentar buscar el precio mínimo entre los descendientes (heurística de oferta)
+                            if (precio == 0)
+                            {
+                                var posiblesNodosPrecio = cardNode.SelectNodes(".//*[contains(text(), '$') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount')]");
+                                if (posiblesNodosPrecio != null)
+                                {
+                                    var preciosEncontrados = new List<decimal>();
+                                    foreach (var pNode in posiblesNodosPrecio)
+                                    {
+                                        // Ignorar nodos que son demasiado grandes o contienen demasiada estructura
+                                        if (pNode.ChildNodes.Count(c => c.Name != "#text") > 3) continue;
+
+                                        var txt = pNode.InnerText;
+                                        var parsed = ParsePrice(txt);
+                                        if (parsed.HasValue && parsed.Value > 0)
+                                        {
+                                            preciosEncontrados.Add(parsed.Value);
+                                        }
+                                    }
+
+                                    if (preciosEncontrados.Any())
+                                    {
+                                        // Buscar si hay alguna etiqueta que indique promoción explícita
+                                        var promoNodes = cardNode.SelectNodes(".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'efectivo') or contains(@class, 'cash') or contains(@class, 'current')]");
+                                        decimal? promoPrecio = null;
+                                        if (promoNodes != null)
+                                        {
+                                            foreach (var pNode in promoNodes)
+                                            {
+                                                var parsed = ParsePrice(pNode.InnerText);
+                                                if (parsed.HasValue && parsed.Value > 0)
+                                                {
+                                                    promoPrecio = parsed.Value;
+                                                    break; // Usar el primero
+                                                }
+                                            }
+                                        }
+
+                                        precio = promoPrecio ?? preciosEncontrados.Min();
+                                    }
+                                }
+                            }
+
+                            // Extraer Imagen (soportando técnicas de Lazy Loading de PWAs como Liverpool y Costco)
                             string? imagenUrl = null;
                             if (!string.IsNullOrWhiteSpace(imagenSelector))
                             {
                                 var imgNode = cardNode.SelectSingleNode(imagenSelector);
-                                imagenUrl = imgNode?.Attributes["src"]?.Value 
-                                            ?? imgNode?.Attributes["data-src"]?.Value 
-                                            ?? imgNode?.Attributes["href"]?.Value;
+                                if (imgNode != null)
+                                {
+                                    // Primero intentar atributos de carga perezosa de alta resolución
+                                    imagenUrl = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original", "src", "href");
+
+                                    // Si el enlace apunta a un marcador de posición transparente de 1x1 o spinner, buscar el real
+                                    if (imagenUrl != null && (imagenUrl.StartsWith("data:image") || imagenUrl.Contains("blank") || imagenUrl.Contains("placeholder") || imagenUrl.Contains("transparent")))
+                                    {
+                                        var ds = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original");
+                                        if (!string.IsNullOrEmpty(ds)) imagenUrl = ds;
+                                    }
+                                }
                             }
                             if (string.IsNullOrEmpty(imagenUrl))
                             {
                                 var fallbackImgNode = cardNode.SelectSingleNode(".//img");
-                                imagenUrl = fallbackImgNode?.Attributes["src"]?.Value ?? fallbackImgNode?.Attributes["data-src"]?.Value;
+                                if (fallbackImgNode != null)
+                                {
+                                    imagenUrl = GetFirstNonEmptyAttribute(fallbackImgNode, "data-src", "data-lazy-src", "src");
+
+                                    if (imagenUrl != null && (imagenUrl.StartsWith("data:image") || imagenUrl.Contains("blank") || imagenUrl.Contains("placeholder") || imagenUrl.Contains("transparent")))
+                                    {
+                                        var ds = GetFirstNonEmptyAttribute(fallbackImgNode, "data-src", "data-lazy-src");
+                                        if (!string.IsNullOrEmpty(ds)) imagenUrl = ds;
+                                    }
+                                }
                             }
                             if (!string.IsNullOrEmpty(imagenUrl))
                             {
@@ -343,14 +410,22 @@ namespace Teocuitla.Shared.Helpers
 
             try
             {
-                // Intentar buscar patrones comunes de IDs o SKUs en la URL (números de 5 a 15 dígitos)
-                var match = Regex.Match(url, @"[/-](\d{5,15})(?:\.html|\?|/|$)");
+                // 1. Intentar buscar en parámetros de consulta comunes (ej: ?sku=12345, &productId=998877)
+                var queryMatch = Regex.Match(url, @"[?&](?:sku|id|prod|product|code|productId|productCode|spu|item|itemId)=(\w{4,20})", RegexOptions.IgnoreCase);
+                if (queryMatch.Success)
+                {
+                    return queryMatch.Groups[1].Value.ToUpper();
+                }
+
+                // 2. Intentar buscar patrones comunes de IDs o SKUs en la URL (números de 4 a 15 dígitos al final de un segmento)
+                // Ej: /p/1264415, -1264415.html, /1264415/
+                var match = Regex.Match(url, @"[/-](\d{4,15})(?:\.html|\?|/|$)");
                 if (match.Success)
                 {
                     return match.Groups[1].Value;
                 }
 
-                // Intentar buscar identificador tipo mercado libre o similar (ej: MLM-1234567890 o MLM1234567890)
+                // 3. Intentar buscar identificador tipo mercado libre o similar (ej: MLM-1234567890 o MLM1234567890)
                 var matchML = Regex.Match(url, @"(ML[A-Z]-\d{7,15}|ML[A-Z]\d{7,15})", RegexOptions.IgnoreCase);
                 if (matchML.Success)
                 {
@@ -378,23 +453,42 @@ namespace Teocuitla.Shared.Helpers
                 var rel = link.GetAttributeValue("rel", "").ToLower();
                 var className = link.GetAttributeValue("class", "").ToLower();
                 var id = link.GetAttributeValue("id", "").ToLower();
+                var ariaLabel = link.GetAttributeValue("aria-label", "").ToLower();
+                var title = link.GetAttributeValue("title", "").ToLower();
 
-                if (rel == "next")
+                // 1. Rel="next" es el estándar de SEO, máxima prioridad
+                if (rel == "next" || rel.Contains("siguiente"))
                 {
-                    return link.GetAttributeValue("href", null);
+                    var href = link.GetAttributeValue("href", null);
+                    if (!string.IsNullOrEmpty(href)) return href;
                 }
 
-                if (className.Contains("next") || id.Contains("next") || className.Contains("siguiente"))
+                // 2. Comprobar texto, aria-label o título
+                bool matchesKeyword = nextKeywords.Any(k => 
+                    text == k || 
+                    text.Contains("siguiente") || 
+                    text.Contains("next") ||
+                    ariaLabel.Contains("siguiente") || 
+                    ariaLabel.Contains("next") || 
+                    ariaLabel.Contains("page-next") ||
+                    title.Contains("siguiente") || 
+                    title.Contains("next")
+                );
+
+                // 3. Comprobar clases o IDs del enlace o sus hijos inmediatos
+                bool matchesClassOrId = className.Contains("next") || 
+                                        id.Contains("next") || 
+                                        className.Contains("siguiente") ||
+                                        link.SelectSingleNode(".//*[contains(@class, 'next') or contains(@class, 'siguiente') or contains(@class, 'chevron-right') or contains(@class, 'arrow-right')]") != null;
+
+                if (matchesKeyword || matchesClassOrId)
                 {
-                    if (!text.Contains("producto") && !text.Contains("artículo"))
+                    // Evitar falsos positivos como "volver a ver productos" o enlaces de detalles
+                    if (!text.Contains("producto") && !text.Contains("artículo") && !text.Contains("detalle"))
                     {
-                        return link.GetAttributeValue("href", null);
+                        var href = link.GetAttributeValue("href", null);
+                        if (!string.IsNullOrEmpty(href)) return href;
                     }
-                }
-
-                if (nextKeywords.Any(k => text == k || text.Contains("siguiente") || text.Contains("next")))
-                {
-                    return link.GetAttributeValue("href", null);
                 }
             }
 
@@ -423,13 +517,35 @@ namespace Teocuitla.Shared.Helpers
 
                 foreach (var node in allTextNodes)
                 {
+                    // Ignorar nodos en scripts, styles, header, footer y otras áreas de ruido
+                    if (EsNodoDeRuido(node)) continue;
+
                     var text = node.InnerText.Trim();
                     if (string.IsNullOrWhiteSpace(text)) continue;
 
-                    // Patrón simple de precio: símbolo de pesos/moneda seguido de números
-                    if (Regex.IsMatch(text, @"^\$?\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$") && text.Any(char.IsDigit))
+                    // Quitar espaciados múltiples internos y newlines para normalizar
+                    var cleanText = Regex.Replace(text, @"\s+", " ").Trim();
+
+                    // Candidato 1: Coincide con patrones monetarios (ej: $1,234.56, MXN $99.00, $15,999)
+                    var matchesPricePattern = Regex.IsMatch(cleanText, @"(?:\$|MXN|USD)\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\b") || 
+                                              Regex.IsMatch(cleanText, @"^\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$");
+
+                    if (matchesPricePattern && text.Any(char.IsDigit))
                     {
-                        priceTextNodes.Add(node.ParentNode); // Guardar el elemento padre del nodo de texto
+                        priceTextNodes.Add(node.ParentNode);
+                        continue;
+                    }
+
+                    // Candidato 2: El padre contiene clases semánticas de precio y el texto tiene dígitos
+                    var parent = node.ParentNode;
+                    if (parent != null)
+                    {
+                        var parentClass = parent.GetAttributeValue("class", "").ToLower();
+                        if ((parentClass.Contains("price") || parentClass.Contains("precio") || parentClass.Contains("amount")) && 
+                            text.Any(char.IsDigit) && text.Length < 35)
+                        {
+                            priceTextNodes.Add(parent);
+                        }
                     }
                 }
 
@@ -443,26 +559,52 @@ namespace Teocuitla.Shared.Helpers
                     int level = 0;
                     while (current != null && level < 6)
                     {
-                        // Verificar si este ancestro tiene un tag 'a' (link de producto) y una imagen o encabezado
+                        // Verificar si este ancestro tiene un tag 'a' (link de producto) y una imagen
                         var hasLink = current.Name == "a" || current.SelectSingleNode(".//a[@href]") != null;
                         var hasImg = current.SelectSingleNode(".//img") != null;
-                        var hasHeading = current.SelectSingleNode(".//h3") != null || current.SelectSingleNode(".//h2") != null 
-                                         || current.SelectSingleNode(".//span") != null || current.SelectSingleNode(".//div") != null;
+                        
+                        // En e-commerce modernos, un producto puede o no tener encabezado h2/h3.
+                        // Usamos una verificación de estructura general (título, descripción, o spans de texto)
+                        var hasStructure = current.ChildNodes.Count(c => c.Name != "#text") > 2;
 
-                        if (hasLink && hasImg && hasHeading)
+                        if (hasLink && hasImg && hasStructure)
                         {
-                            // Generar una firma de clase/estructura para este nodo
                             var tagName = current.Name;
                             var className = current.GetAttributeValue("class", "").Trim();
-                            var signature = string.IsNullOrEmpty(className) 
-                                ? $"//{tagName}" 
-                                : $"//{tagName}[contains(@class, '{className.Split(' ').First()}')]";
+                            
+                            var isCustomTag = tagName.Contains("-");
+                            var isProductCardClass = className.Contains("item", StringComparison.OrdinalIgnoreCase) || 
+                                                     className.Contains("product", StringComparison.OrdinalIgnoreCase) || 
+                                                     className.Contains("card", StringComparison.OrdinalIgnoreCase) || 
+                                                     className.Contains("lister", StringComparison.OrdinalIgnoreCase) ||
+                                                     className.Contains("tile", StringComparison.OrdinalIgnoreCase);
+
+                            // Si es un tag personalizado (ej: sip-product-list-item, cx-product-grid-item),
+                            // no requiere clase específica ya que la etiqueta misma es sumamente específica.
+                            string signature;
+                            if (isCustomTag)
+                            {
+                                signature = $"//{tagName}";
+                            }
+                            else
+                            {
+                                var bestClass = ObtenerMejorClaseParaFirma(className);
+                                signature = string.IsNullOrEmpty(bestClass)
+                                    ? $"//{tagName}"
+                                    : $"//{tagName}[contains(@class, '{bestClass}')]";
+                            }
 
                             if (!candidatePaths.ContainsKey(signature))
                             {
                                 candidatePaths[signature] = 0;
                             }
-                            candidatePaths[signature]++;
+
+                            // Sistema de scoring ponderado
+                            int weight = 1;
+                            if (isCustomTag) weight += 4;
+                            if (isProductCardClass) weight += 3;
+
+                            candidatePaths[signature] += weight;
                         }
 
                         current = current.ParentNode;
@@ -476,15 +618,14 @@ namespace Teocuitla.Shared.Helpers
                 var bestContainerSignature = candidatePaths.OrderByDescending(x => x.Value).First().Key;
 
                 // 3. Deducir selectores relativos de los elementos dentro del contenedor
-                // Asumimos selectores genéricos y robustos relativos al contenedor
                 var selectors = new HeuristicSelectors
                 {
                     Container = bestContainerSignature,
-                    Nombre = ".//h3[1] | .//h2[1] | .//a[contains(@class, 'title')][1] | .//span[contains(@class, 'title')][1]",
-                    Precio = ".//*[contains(text(), '$')][1] | .//*[contains(@class, 'price')][1]",
-                    Link = ".//a[@href][1]",
-                    Imagen = ".//img[1]",
-                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next')][1]"
+                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//h6[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'description') or contains(@class, 'desc') or contains(@class, 'label')][1] | .//a[@href][1]",
+                    Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'efectivo') or contains(@class, 'cash') or contains(@class, 'current')][1] | .//*[contains(@class, 'price')][1] | .//*[contains(@class, 'precio')][1] | .//*[contains(@class, 'amount')][1] | .//*[contains(text(), '$')][1]",
+                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'thumb')][1] | .//a[@href][1]",
+                    Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'thumb')][1] | .//img[1]",
+                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente')][1] | //a[contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
                 };
 
                 return selectors;
@@ -493,6 +634,98 @@ namespace Teocuitla.Shared.Helpers
             {
                 return null;
             }
+        }
+
+        private static bool EsNodoDeRuido(HtmlNode node)
+        {
+            var current = node.ParentNode;
+            while (current != null)
+            {
+                var name = current.Name.ToLower();
+                if (name == "head" || name == "script" || name == "style" || name == "noscript" || 
+                    name == "svg" || name == "iframe" || name == "header" || name == "footer" || 
+                    name == "nav" || name == "aside")
+                {
+                    return true;
+                }
+
+                var classVal = current.GetAttributeValue("class", "").ToLower();
+                var idVal = current.GetAttributeValue("id", "").ToLower();
+                if (classVal.Contains("header") || classVal.Contains("footer") || classVal.Contains("nav") || classVal.Contains("menu") ||
+                    idVal.Contains("header") || idVal.Contains("footer") || idVal.Contains("nav") || idVal.Contains("menu"))
+                {
+                    return true;
+                }
+
+                current = current.ParentNode;
+            }
+            return false;
+        }
+
+        private static string ObtenerMejorClaseParaFirma(string classAttr)
+        {
+            if (string.IsNullOrWhiteSpace(classAttr)) return string.Empty;
+
+            var classes = classAttr.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                   .Select(c => c.Trim())
+                                   .Where(c => !string.IsNullOrEmpty(c))
+                                   .ToList();
+
+            if (!classes.Any()) return string.Empty;
+
+            // 1. Filtrar clases de sistema, layout, frameworks y utilidades
+            var clasesFiltradas = classes.Where(c => 
+                !c.StartsWith("ng-") && 
+                !c.StartsWith("mat-") && 
+                !c.StartsWith("mdc-") &&
+                !c.StartsWith("col-") &&
+                !c.StartsWith("row-") &&
+                !c.StartsWith("flex-") &&
+                !c.StartsWith("grid-") &&
+                !c.Equals("row") &&
+                !c.Equals("flex") &&
+                !c.Equals("grid") &&
+                !c.Equals("container") &&
+                !c.Equals("ng-star-inserted") &&
+                !c.Contains("bootstrap") &&
+                !Regex.IsMatch(c, @"^[pmgtbxy]-[0-9]+$") && // e.g., p-4, m-2, g-3
+                !Regex.IsMatch(c, @"^(w|h|col|row|order|flex|grid|justify|align|self|items|content|text|bg|border|rounded|shadow|opacity|z|transition|duration|delay|ease|overflow|cursor|pointer-events|select|resize|border-style|border-width|border-color|divide|ring|outline)-") && // utilidades tailwind
+                !Regex.IsMatch(c, @"^(sm|md|lg|xl|2xl|focus|hover|active|disabled|visited|dark|motion-reduce|motion-safe|first|last|odd|even):") // modificadores tailwind
+            ).ToList();
+
+            if (!clasesFiltradas.Any())
+            {
+                // Fallback: clases no-Angular / no-Material
+                var fallbackClass = classes.FirstOrDefault(c => !c.Contains("ng-") && !c.Contains("mat-") && !c.Contains("mdc-"));
+                return fallbackClass ?? string.Empty;
+            }
+
+            // 2. Priorizar clases semánticas de e-commerce
+            var keywords = new[] { "product", "producto", "item", "card", "tarjeta", "lister", "tile", "entry", "article" };
+            foreach (var kw in keywords)
+            {
+                var match = clasesFiltradas.FirstOrDefault(c => c.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            // 3. Retornar la primera clase filtrada
+            return clasesFiltradas.First();
+        }
+
+        private static string? GetFirstNonEmptyAttribute(HtmlNode node, params string[] attributeNames)
+        {
+            foreach (var attr in attributeNames)
+            {
+                var val = node.GetAttributeValue(attr, null)?.Trim();
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    return val;
+                }
+            }
+            return null;
         }
 
         private static string MakeAbsoluteUrl(string url, string baseUrl)
@@ -517,5 +750,7 @@ namespace Teocuitla.Shared.Helpers
             }
             return url;
         }
+    }
+}
     }
 }

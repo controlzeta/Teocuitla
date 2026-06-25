@@ -1,0 +1,748 @@
+@page "/admin/extractor-categorias"
+@rendermode InteractiveServer
+@using Teocuitla.Shared.Models
+@using Teocuitla.Shared.Helpers
+@using Teocuitla.Shared.Data
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+
+<PageTitle>Extractor de Categorías - Teocuitla</PageTitle>
+
+<div class="d-flex align-center justify-space-between mb-6">
+    <div>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Extractor de Categorías</MudText>
+            <MudTooltip Text="Ayuda de la pantalla">
+                <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" />
+            </MudTooltip>
+        </div>
+        <MudText Typo="Typo.body2" Class="text-muted">Extrae productos, precios e imágenes desde URLs de listados de categoría y gestiona su almacenamiento masivo en el catálogo.</MudText>
+    </div>
+</div>
+
+<MudGrid>
+    <!-- PANEL DE CONFIGURACIÓN (IZQUIERDA) -->
+    <MudItem xs="12" md="4">
+        <div class="d-flex flex-column gap-4">
+            <MudCard Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Configuración del Rastreo</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0 d-flex flex-column gap-4">
+                    <MudSelect T="int" Label="Sitio de Catálogo" Value="@_selectedSitioId" ValueChanged="OnSitioChanged" Variant="Variant.Outlined" Required="true" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="int" Value="0">-- Selecciona un Sitio --</MudSelectItem>
+                        @foreach (var sitio in _sitios)
+                        {
+                            <MudSelectItem T="int" Value="@sitio.Id">@sitio.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="_urlInicial" Label="URL de la Categoría" Variant="Variant.Outlined" Required="true" HelperText="Ej: https://tienda.com/electronica" />
+
+                    <div>
+                        <div class="d-flex justify-space-between align-center mb-1">
+                            <MudText Typo="Typo.body2" Class="text-muted font-medium">Páginas Máximas: @_maxPaginas</MudText>
+                        </div>
+                        <MudSlider @bind-Value="_maxPaginas" Min="1" Max="10" Step="1" Color="Color.Primary" />
+                    </div>
+
+                    <div class="d-flex align-center justify-space-between mt-2">
+                        <div class="d-flex flex-column">
+                            <MudText Typo="Typo.body2" Class="font-medium">Rotación de Proxy</MudText>
+                            <MudText Typo="Typo.caption" Class="text-muted">Usa el pool de proxies IP para evadir bloqueos.</MudText>
+                        </div>
+                        <MudSwitch @bind-Value="_useProxy" Color="Color.Primary" />
+                    </div>
+                </MudCardContent>
+                <MudCardActions Class="pb-4 px-4 d-flex flex-column gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow" FullWidth="true" OnClick="EjecutarExtractorAsync" Disabled="@_loading">
+                        Ejecutar Extractor
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.AutoAwesome" FullWidth="true" OnClick="AutoDetectHeuristicaAsync" Disabled="@_loading">
+                        Auto-Detectar Heurística
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+
+            <!-- ACORDEÓN DE SELECTORES PERSONALIZADOS -->
+            <MudExpansionPanels Elevation="0" Class="border border-solid mud-border-default rounded">
+                <MudExpansionPanel Text="Selectores XPath (Overrides)" Icon="@Icons.Material.Filled.Code">
+                    <div class="d-flex flex-column gap-4 pt-1">
+                        <MudText Typo="Typo.caption" Class="text-muted">
+                            Ajusta los selectores de forma manual si la estructura del portal requiere calibración específica.
+                        </MudText>
+                        
+                        <div class="border-b border-solid mud-border-default pb-3">
+                            <MudText Typo="Typo.subtitle2" Class="font-bold text-primary mb-2" Style="font-size: 0.8rem; letter-spacing: 0.5px;">ESTRUCTURA & CUADRÍCULA</MudText>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="12">
+                                    <MudTextField @bind-Value="_overrideContainer" 
+                                                  Label="Contenedor de Tarjeta (Fila/Item)" 
+                                                  Variant="Variant.Outlined" 
+                                                  Margin="Margin.Dense" 
+                                                  Adornment="Adornment.Start" 
+                                                  AdornmentIcon="@Icons.Material.Filled.GridOn" 
+                                                  AdornmentColor="Color.Primary"
+                                                  Placeholder="@("Ej: //div[contains(@class, 'product-item')]")" />
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudTextField @bind-Value="_overrideLink" 
+                                                  Label="Nodo de Enlace (Relativo)" 
+                                                  Variant="Variant.Outlined" 
+                                                  Margin="Margin.Dense" 
+                                                  Adornment="Adornment.Start" 
+                                                  AdornmentIcon="@Icons.Material.Filled.Link" 
+                                                  AdornmentColor="Color.Info"
+                                                  Placeholder="Ej: .//a" />
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudTextField @bind-Value="_overrideImagen" 
+                                                  Label="Nodo de Imagen (Relativo)" 
+                                                  Variant="Variant.Outlined" 
+                                                  Margin="Margin.Dense" 
+                                                  Adornment="Adornment.Start" 
+                                                  AdornmentIcon="@Icons.Material.Filled.Image" 
+                                                  AdornmentColor="Color.Info"
+                                                  Placeholder="Ej: .//img" />
+                                </MudItem>
+                            </MudGrid>
+                        </div>
+
+                        <div class="border-b border-solid mud-border-default pb-3">
+                            <MudText Typo="Typo.subtitle2" Class="font-bold text-primary mb-2" Style="font-size: 0.8rem; letter-spacing: 0.5px;">DATOS EXTRAÍDOS</MudText>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="6">
+                                    <MudTextField @bind-Value="_overrideNombre" 
+                                                  Label="Título/Nombre (Relativo)" 
+                                                  Variant="Variant.Outlined" 
+                                                  Margin="Margin.Dense" 
+                                                  Adornment="Adornment.Start" 
+                                                  AdornmentIcon="@Icons.Material.Filled.Title" 
+                                                  AdornmentColor="Color.Warning"
+                                                  Placeholder="Ej: .//h3" />
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudTextField @bind-Value="_overridePrecio" 
+                                                  Label="Precio (Relativo)" 
+                                                  Variant="Variant.Outlined" 
+                                                  Margin="Margin.Dense" 
+                                                  Adornment="Adornment.Start" 
+                                                  AdornmentIcon="@Icons.Material.Filled.LocalOffer" 
+                                                  AdornmentColor="Color.Success"
+                                                  Placeholder="@("Ej: .//*[contains(@class, 'price')]")" />
+                                </MudItem>
+                            </MudGrid>
+                        </div>
+
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Class="font-bold text-primary mb-2" Style="font-size: 0.8rem; letter-spacing: 0.5px;">NAVEGACIÓN & FLUJO</MudText>
+                            <MudTextField @bind-Value="_overridePaginador" 
+                                          Label="Botón Página Siguiente (Absoluto)" 
+                                          Variant="Variant.Outlined" 
+                                          Margin="Margin.Dense" 
+                                          Adornment="Adornment.Start" 
+                                          AdornmentIcon="@Icons.Material.Filled.NavigateNext" 
+                                          AdornmentColor="Color.Secondary"
+                                          Placeholder="@("Ej: //a[@rel='next']")" />
+                        </div>
+                    </div>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        </div>
+    </MudItem>
+
+    <!-- TABLA DE RESULTADOS (DERECHA) -->
+    <MudItem xs="12" md="8">
+        <MudCard Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded h-100 d-flex flex-column" Style="background: var(--mud-palette-surface); min-height: 500px;">
+            @if (_loading)
+            {
+                <div class="d-flex flex-column align-center justify-center my-auto py-12">
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" Class="mb-4" />
+                    <MudText Typo="Typo.h6" Class="font-bold">Procesando Extracción...</MudText>
+                    <MudText Typo="Typo.body2" Class="text-muted">@_statusMessage</MudText>
+                </div>
+            }
+            else if (_scrapedProducts.Count == 0)
+            {
+                <div class="d-flex flex-column align-center justify-center my-auto py-12 text-center px-6">
+                    <MudIcon Icon="@Icons.Material.Filled.ManageSearch" Size="Size.Large" Color="Color.Primary" Class="mb-4" Style="font-size: 3.5rem;" />
+                    <MudText Typo="Typo.h6" Class="font-bold mb-2">Sin productos extraídos</MudText>
+                    <MudText Typo="Typo.body2" Class="text-muted max-w-md mb-4">
+                        Selecciona un sitio web, ingresa la URL de alguna categoría y ejecuta el extractor para analizar y listar los productos disponibles.
+                    </MudText>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex align-center justify-space-between pa-4 border-b border-solid mud-border-default" style="background: rgba(255, 255, 255, 0.01);">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="font-bold">Productos Extraídos (@_scrapedProducts.Count)</MudText>
+                        <MudText Typo="Typo.caption" Class="text-muted">
+                            @_selectedItems.Count productos seleccionados para almacenar.
+                        </MudText>
+                    </div>
+                    <div class="d-flex align-center gap-2">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" StartIcon="@Icons.Material.Filled.Psychology" OnClick="AprenderSelectoresAsync" Disabled="@(!_hasLearnedSelectors)">
+                            Aprender Selectores
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Save" OnClick="OpenSaveDialog" Disabled="@(!_selectedItems.Any())">
+                            Guardar Seleccionados
+                        </MudButton>
+                    </div>
+                </div>
+
+                <div class="flex-grow-1" style="overflow-y: auto;">
+                    <MudTable Items="@_scrapedProducts" MultiSelection="true" @bind-SelectedItems="_selectedItems" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="false" Class="border-0">
+                        <HeaderContent>
+                            <MudTh>Imagen</MudTh>
+                            <MudTh>Nombre</MudTh>
+                            <MudTh>SKU</MudTh>
+                            <MudTh>Precio</MudTh>
+                            <MudTh>Estatus</MudTh>
+                            <MudTh>Enlace</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Imagen">
+                                @if (!string.IsNullOrEmpty(context.ImagenUrl))
+                                {
+                                    <img src="@context.ImagenUrl" alt="@context.Nombre" style="width: 44px; height: 44px; object-fit: contain; border-radius: 4px; background: #fff; border: 1px solid var(--mud-palette-divider);" />
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-center justify-center rounded" style="width: 44px; height: 44px; background: rgba(255,255,255,0.05); border: 1px solid var(--mud-palette-divider);">
+                                        <MudIcon Icon="@Icons.Material.Filled.BrokenImage" Size="Size.Small" Color="Color.Default" />
+                                    </div>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Nombre" Class="font-bold" Style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                @context.Nombre
+                            </MudTd>
+                            <MudTd DataLabel="SKU">
+                                <code style="font-family: monospace; font-size: 0.8rem; padding: 2px 6px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; border: 1px solid rgba(255,255,255,0.08);">@context.Sku</code>
+                            </MudTd>
+                            <MudTd DataLabel="Precio" Class="mud-text-success font-bold">
+                                @if (context.Precio > 0)
+                                {
+                                    <span>$@context.Precio.ToString("N2")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted font-normal" style="font-size: 0.85rem;">No detectado</span>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Estatus">
+                                @if (context.YaExiste)
+                                {
+                                    <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Ya Registrado</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text" Class="font-bold">Nuevo</MudChip>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Enlace">
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Info" href="@context.UrlProducto" target="_blank" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<!-- DIALOG INLINE PARA GUARDAR PRODUCTOS -->
+<MudDialog @bind-Visible="_saveDialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Guardar Productos en Catálogo</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="text-muted mb-4">
+            Has seleccionado <strong>@_selectedItems.Count</strong> productos para guardar. Elige la estrategia de almacenamiento:
+        </MudText>
+
+        <MudRadioGroup T="string" @bind-Value="_saveMode" Class="d-flex flex-column gap-2 mb-4">
+            <MudRadio Value="@("individual")" Color="Color.Primary">
+                <strong>Opción A:</strong> Crear un Producto Maestro individual para cada variante
+            </MudRadio>
+            <MudRadio Value="@("single")" Color="Color.Primary">
+                <strong>Opción B:</strong> Vincular todas las variantes a un único Producto Maestro existente
+            </MudRadio>
+        </MudRadioGroup>
+
+        @if (_saveMode == "individual")
+        {
+            <div class="d-flex flex-column gap-3 mt-2 pa-3 border border-solid mud-border-default rounded" style="background: rgba(255, 255, 255, 0.01);">
+                <MudText Typo="Typo.subtitle2" Class="font-bold">Valores por Defecto (Creación Automática)</MudText>
+                <MudTextField @bind-Value="_defaultMarca" Label="Marca por defecto" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Ej: Genérica o el nombre del fabricante" />
+                <MudTextField @bind-Value="_defaultCategoria" Label="Categoría por defecto" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Ej: Electrónica, Computación, Hogar" />
+            </div>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-3 mt-2 pa-3 border border-solid mud-border-default rounded" style="background: rgba(255, 255, 255, 0.01);">
+                <MudText Typo="Typo.subtitle2" Class="font-bold">Seleccionar Producto Maestro de Destino</MudText>
+                <MudAutocomplete T="ProductoMaestro"
+                                 Label="Escribe para buscar Producto..."
+                                 @bind-Value="_selectedMaestro"
+                                 SearchFunc="@SearchProductosMaestros"
+                                 ToStringFunc="@(p => p == null ? "" : $"{p.Nombre} ({p.Marca} - {p.Categoria})")"
+                                 ResetValueOnEmptyText="true"
+                                 Variant="Variant.Outlined"
+                                 Margin="Margin.Dense"
+                                 Required="true"
+                                 RequiredError="Debes seleccionar un producto maestro" />
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="(() => _saveDialogOpen = false)">Cancelar</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" OnClick="EjecutarGuardadoAsync" Disabled="@(_saveMode == "single" && _selectedMaestro == null)">Guardar Seleccionados</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<CatalogoSitio> _sitios = new();
+    private int _selectedSitioId = 0;
+    private string _selectedSitioName = string.Empty;
+    private string _urlInicial = string.Empty;
+    private int _maxPaginas = 3;
+    private bool _useProxy = true;
+    private bool _loading = false;
+    private string _statusMessage = string.Empty;
+
+    // Overrides de XPath
+    private string? _overrideContainer;
+    private string? _overrideNombre;
+    private string? _overridePrecio;
+    private string? _overrideLink;
+    private string? _overrideImagen;
+    private string? _overridePaginador;
+
+    // Resultados
+    private List<CategoryProductResult> _scrapedProducts = new();
+    private HashSet<CategoryProductResult> _selectedItems = new();
+    private bool _hasLearnedSelectors = false;
+
+    // Dialogo de guardado
+    private bool _saveDialogOpen = false;
+    private string _saveMode = "individual";
+    private string _defaultMarca = "Genérica";
+    private string _defaultCategoria = "General";
+    private ProductoMaestro? _selectedMaestro;
+    private readonly DialogOptions _dialogOptions = new() { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        _sitios = await context.CatalogoSitios.Where(s => s.Activo).OrderBy(s => s.Nombre).ToListAsync();
+    }
+
+    private async Task OnSitioChanged(int sitioId)
+    {
+        _selectedSitioId = sitioId;
+        _hasLearnedSelectors = false;
+        _scrapedProducts.Clear();
+        _selectedItems.Clear();
+
+        var sitio = _sitios.FirstOrDefault(s => s.Id == sitioId);
+        if (sitio != null)
+        {
+            _selectedSitioName = sitio.Nombre;
+            _urlInicial = sitio.UrlBase;
+            _overrideContainer = sitio.SelectorProductoXPath;
+            _overrideNombre = sitio.SelectorNombreXPath;
+            _overridePrecio = sitio.SelectorPrecioXPath;
+            _overrideLink = "a";
+            _overrideImagen = sitio.SelectorImagenXPath;
+            _overridePaginador = sitio.SelectorStockXPath;
+
+            _defaultMarca = sitio.Nombre;
+        }
+        else
+        {
+            _selectedSitioName = string.Empty;
+            _urlInicial = string.Empty;
+            _overrideContainer = null;
+            _overrideNombre = null;
+            _overridePrecio = null;
+            _overrideLink = null;
+            _overrideImagen = null;
+            _overridePaginador = null;
+        }
+    }
+
+    private async Task<RegistroProxy?> GetProxyFromPoolAsync()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        var proxies = await context.RegistroProxies
+            .Where(p => p.Activo && !p.Baneado)
+            .OrderBy(p => p.LatenciaMs)
+            .ToListAsync();
+
+        return proxies.FirstOrDefault();
+    }
+
+    private async Task CheckExistingProductsAsync()
+    {
+        if (_scrapedProducts == null || !_scrapedProducts.Any()) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        var existingSkus = await context.VariantesComerciales
+            .Where(v => v.CatalogoSitioId == _selectedSitioId)
+            .Select(v => v.Sku)
+            .ToListAsync();
+
+        var existingSkuSet = new HashSet<string>(existingSkus, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var prod in _scrapedProducts)
+        {
+            prod.YaExiste = !string.IsNullOrEmpty(prod.Sku) && existingSkuSet.Contains(prod.Sku);
+        }
+    }
+
+    private async Task AutoDetectHeuristicaAsync()
+    {
+        if (_selectedSitioId == 0)
+        {
+            Snackbar.Add("Por favor seleccione un sitio de catálogo primero.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_urlInicial) || !Uri.IsWellFormedUriString(_urlInicial, UriKind.Absolute))
+        {
+            Snackbar.Add("Por favor ingrese una URL inicial de categoría válida.", Severity.Warning);
+            return;
+        }
+
+        var sitio = _sitios.FirstOrDefault(s => s.Id == _selectedSitioId);
+        if (sitio == null) return;
+
+        _loading = true;
+        _scrapedProducts.Clear();
+        _selectedItems.Clear();
+        _statusMessage = "Analizando la estructura HTML en busca de patrones repetitivos (Heurística)...";
+        StateHasChanged();
+
+        try
+        {
+            // Forzar heurística clonando el sitio y vaciando sus selectores
+            var sitioTemp = new CatalogoSitio
+            {
+                Id = sitio.Id,
+                Nombre = sitio.Nombre,
+                UrlBase = sitio.UrlBase,
+                EstrategiaEvasion = sitio.EstrategiaEvasion,
+                SelectorProductoXPath = string.Empty,
+                SelectorNombreXPath = string.Empty,
+                SelectorPrecioXPath = string.Empty,
+                SelectorImagenXPath = string.Empty,
+                SelectorStockXPath = string.Empty
+            };
+
+            RegistroProxy? proxy = null;
+            if (_useProxy)
+            {
+                proxy = await GetProxyFromPoolAsync();
+            }
+
+            var scraper = new CategoryScraper(HttpClientFactory);
+            var result = await scraper.ScrapeCategoryAsync(
+                _urlInicial,
+                sitioTemp,
+                proxy,
+                maxPaginas: 1
+            );
+
+            if (result.Exitoso)
+            {
+                _scrapedProducts = result.Productos;
+                await CheckExistingProductsAsync();
+
+                // Auto-llenar los overrides con los selectores aprendidos
+                _overrideContainer = result.LearnedSelectorProducto;
+                _overrideNombre = result.LearnedSelectorNombre;
+                _overridePrecio = result.LearnedSelectorPrecio;
+                _overrideLink = result.LearnedSelectorLink ?? "a";
+                _overrideImagen = result.LearnedSelectorImagen;
+                _overridePaginador = result.LearnedSelectorPaginador;
+
+                _hasLearnedSelectors = true;
+
+                Snackbar.Add("Heurística completada. Selectores detectados y productos de primera página listados.", Severity.Success);
+            }
+            else
+            {
+                var err = string.IsNullOrWhiteSpace(result.ErrorMensaje)
+                    ? "La heurística no pudo deducir una estructura de productos válida."
+                    : result.ErrorMensaje;
+                Snackbar.Add(err, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error en el rastreo heurístico: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task EjecutarExtractorAsync()
+    {
+        if (_selectedSitioId == 0)
+        {
+            Snackbar.Add("Por favor seleccione un sitio de catálogo primero.", Severity.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_urlInicial) || !Uri.IsWellFormedUriString(_urlInicial, UriKind.Absolute))
+        {
+            Snackbar.Add("Por favor ingrese una URL inicial de categoría válida.", Severity.Warning);
+            return;
+        }
+
+        var sitio = _sitios.FirstOrDefault(s => s.Id == _selectedSitioId);
+        if (sitio == null) return;
+
+        _loading = true;
+        _scrapedProducts.Clear();
+        _selectedItems.Clear();
+        _statusMessage = "Descargando y extrayendo listado de productos...";
+        StateHasChanged();
+
+        try
+        {
+            RegistroProxy? proxy = null;
+            if (_useProxy)
+            {
+                proxy = await GetProxyFromPoolAsync();
+            }
+
+            var scraper = new CategoryScraper(HttpClientFactory);
+            var result = await scraper.ScrapeCategoryAsync(
+                _urlInicial,
+                sitio,
+                proxy,
+                maxPaginas: _maxPaginas,
+                overrideContainer: _overrideContainer,
+                overrideNombre: _overrideNombre,
+                overridePrecio: _overridePrecio,
+                overrideLink: _overrideLink,
+                overrideImagen: _overrideImagen,
+                overridePaginador: _overridePaginador
+            );
+
+            if (result.Exitoso)
+            {
+                _scrapedProducts = result.Productos;
+                await CheckExistingProductsAsync();
+
+                // Habilitar aprendizaje si hay selectores activos que se puedan guardar
+                _hasLearnedSelectors = !string.IsNullOrEmpty(_overrideContainer);
+
+                Snackbar.Add($"Extracción completada. Se encontraron {_scrapedProducts.Count} productos.", Severity.Success);
+            }
+            else
+            {
+                var err = string.IsNullOrWhiteSpace(result.ErrorMensaje)
+                    ? "No se encontraron productos. Verifica los selectores XPath."
+                    : result.ErrorMensaje;
+                Snackbar.Add(err, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error en la extracción: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AprenderSelectoresAsync()
+    {
+        if (_selectedSitioId == 0) return;
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dbSitio = await context.CatalogoSitios.FindAsync(_selectedSitioId);
+            if (dbSitio != null)
+            {
+                dbSitio.SelectorProductoXPath = _overrideContainer ?? string.Empty;
+                dbSitio.SelectorNombreXPath = _overrideNombre ?? string.Empty;
+                dbSitio.SelectorPrecioXPath = _overridePrecio ?? string.Empty;
+                dbSitio.SelectorImagenXPath = _overrideImagen ?? string.Empty;
+                dbSitio.SelectorStockXPath = _overridePaginador ?? string.Empty; // Se almacena en SelectorStockXPath para el paginador
+
+                context.Entry(dbSitio).State = EntityState.Modified;
+                await context.SaveChangesAsync();
+
+                Snackbar.Add($"Configuración de selectores guardada exitosamente en el sitio '{dbSitio.Nombre}'.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al guardar los selectores en la configuración del sitio: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OpenSaveDialog()
+    {
+        if (!_selectedItems.Any()) return;
+
+        _defaultMarca = _selectedSitioName;
+        _defaultCategoria = "General";
+        _selectedMaestro = null;
+        _saveDialogOpen = true;
+    }
+
+    private async Task<IEnumerable<ProductoMaestro>> SearchProductosMaestros(string value, CancellationToken token)
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        if (string.IsNullOrEmpty(value))
+        {
+            return await context.ProductosMaestros
+                .OrderBy(p => p.Nombre)
+                .Take(20)
+                .ToListAsync(token);
+        }
+
+        return await context.ProductosMaestros
+            .Where(p => p.Nombre.Contains(value) || p.Marca.Contains(value) || p.Categoria.Contains(value))
+            .OrderBy(p => p.Nombre)
+            .Take(20)
+            .ToListAsync(token);
+    }
+
+    private async Task EjecutarGuardadoAsync()
+    {
+        if (!_selectedItems.Any()) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        using var transaction = await context.Database.BeginTransactionAsync();
+
+        try
+        {
+            int creados = 0;
+            int vinculados = 0;
+
+            foreach (var item in _selectedItems)
+            {
+                // Verificar si esta variante con este SKU ya existe en este sitio
+                var existe = await context.VariantesComerciales
+                    .AnyAsync(v => v.CatalogoSitioId == _selectedSitioId && v.Sku == item.Sku);
+
+                if (existe)
+                {
+                    continue;
+                }
+
+                ProductoMaestro maestro;
+
+                if (_saveMode == "individual")
+                {
+                    // Crear ProductoMaestro
+                    maestro = new ProductoMaestro
+                    {
+                        Nombre = item.Nombre,
+                        Marca = string.IsNullOrWhiteSpace(_defaultMarca) ? _selectedSitioName : _defaultMarca,
+                        Categoria = string.IsNullOrWhiteSpace(_defaultCategoria) ? "General" : _defaultCategoria,
+                        Descripcion = $"Creado automáticamente desde extractor de categorías ({_selectedSitioName}) el {DateTime.Now:dd/MM/yyyy}.",
+                        FechaCreacion = DateTime.UtcNow
+                    };
+                    context.ProductosMaestros.Add(maestro);
+                    await context.SaveChangesAsync();
+                    creados++;
+                }
+                else
+                {
+                    // Usar ProductoMaestro existente
+                    if (_selectedMaestro == null)
+                    {
+                        throw new Exception("Debe seleccionar un Producto Maestro existente.");
+                    }
+                    maestro = _selectedMaestro;
+                    vinculados++;
+                }
+
+                // Crear VarianteComercial
+                var variante = new VarianteComercial
+                {
+                    ProductoMaestroId = maestro.Id,
+                    CatalogoSitioId = _selectedSitioId,
+                    Sku = item.Sku ?? string.Empty,
+                    Nombre = item.Nombre,
+                    UrlProducto = item.UrlProducto,
+                    PrecioActual = item.Precio > 0 ? item.Precio : null,
+                    PrecioAnterior = null,
+                    EnStock = true,
+                    UltimaActualizacion = DateTime.UtcNow,
+                    IntentosDiaActual = 0,
+                    FechaUltimoIntento = DateTime.UtcNow,
+                    ImagenUrl = item.ImagenUrl,
+                    Activo = true
+                };
+                context.VariantesComerciales.Add(variante);
+                await context.SaveChangesAsync();
+
+                // Si se extrajo precio válido, registrar en historial
+                if (item.Precio > 0)
+                {
+                    var hist = new HistorialPrecio
+                    {
+                        VarianteComercialId = variante.Id,
+                        Precio = item.Precio,
+                        EnStock = true,
+                        FechaCaptura = DateTime.UtcNow
+                    };
+                    context.HistorialPrecios.Add(hist);
+                }
+            }
+
+            await context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            Snackbar.Add($"Proceso de guardado completado. Creados: {creados}. Vinculados: {vinculados}.", Severity.Success);
+            _saveDialogOpen = false;
+
+            // Actualizar estatus visual
+            await CheckExistingProductsAsync();
+            _selectedItems.Clear();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            Snackbar.Add($"Error al registrar productos: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AbrirAyudaAsync()
+    {
+        var htmlContent = @"
+            <div class='d-flex flex-column gap-3 py-2'>
+                <p class='mud-text-secondary' style='font-size: 0.95rem; line-height: 1.5;'>El Extractor de Categorías te permite recopilar productos a escala de forma interactiva:</p>
+                <ol class='d-flex flex-column gap-2 pl-4' style='list-style-type: decimal; font-size: 0.9rem; line-height: 1.5;'>
+                    <li><strong>Selección del Sitio:</strong> Elige un sitio web del listado. Sus selectores XPath configurados y URL base se cargarán automáticamente.</li>
+                    <li><strong>URL de Categoría:</strong> Ingresa el enlace exacto de la sección del comercio que deseas raspar (ej: ofertas, laptops, etc.).</li>
+                    <li><strong>Auto-Detección Heurística:</strong> Si el sitio no tiene XPaths configurados, usa este botón. El sistema analizará el HTML de la primera página, deducirá los contenedores de producto, títulos, precios e imágenes, y llenará los campos XPath automáticamente.</li>
+                    <li><strong>Aprender Selectores:</strong> Si la extracción es exitosa (sea por heurística o por ajustes manuales), haz clic en 'Aprender Selectores' para guardar estos XPaths directamente en la configuración del sitio en base de datos. Así, el motor en segundo plano los usará de inmediato.</li>
+                    <li><strong>Guardado Masivo:</strong> Selecciona los productos que deseas registrar en tu catálogo y haz clic en 'Guardar Seleccionados'. Podrás elegir entre crear un Producto Maestro para cada uno de ellos o vincularlos todos a un Producto Maestro existente.</li>
+                </ol>
+            </div>";
+
+        await DialogService.ShowMessageBoxAsync(
+            "Ayuda: Extractor de Categorías",
+            (MarkupString)htmlContent,
+            yesText: "Entendido");
+    }
+}
