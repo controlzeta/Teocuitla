@@ -252,6 +252,21 @@
                         </RowTemplate>
                     </MudTable>
                 </div>
+                @if (_diagnostics != null && _diagnostics.Any())
+                {
+                    <div class="pa-4 border-t border-solid mud-border-default" style="background: rgba(255, 152, 0, 0.02); margin-top: auto;">
+                        <MudExpansionPanels Elevation="0" Outlined="true">
+                            <MudExpansionPanel Text="Diagnóstico del Extractor (Avisos y Advertencias)" Icon="@Icons.Material.Filled.Warning" Style="background: transparent;">
+                                <div style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+                                    @foreach (var diag in _diagnostics)
+                                    {
+                                        <div class="mb-1 text-warning">@diag</div>
+                                    }
+                                </div>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    </div>
+                }
             }
         </MudCard>
     </MudItem>
@@ -328,6 +343,7 @@
     // Resultados
     private List<CategoryProductResult> _scrapedProducts = new();
     private HashSet<CategoryProductResult> _selectedItems = new();
+    private List<string> _diagnostics = new();
     private bool _hasLearnedSelectors = false;
 
     // Dialogo de guardado
@@ -350,6 +366,7 @@
         _hasLearnedSelectors = false;
         _scrapedProducts.Clear();
         _selectedItems.Clear();
+        _diagnostics.Clear();
 
         var sitio = _sitios.FirstOrDefault(s => s.Id == sitioId);
         if (sitio != null)
@@ -426,6 +443,7 @@
         _loading = true;
         _scrapedProducts.Clear();
         _selectedItems.Clear();
+        _diagnostics.Clear();
         _statusMessage = "Analizando la estructura HTML en busca de patrones repetitivos (Heurística)...";
         StateHasChanged();
 
@@ -462,6 +480,7 @@
             if (result.Exitoso)
             {
                 _scrapedProducts = result.Productos;
+                _diagnostics = result.Diagnosticos;
                 await CheckExistingProductsAsync();
 
                 // Auto-llenar los overrides con los selectores aprendidos
@@ -514,6 +533,7 @@
         _loading = true;
         _scrapedProducts.Clear();
         _selectedItems.Clear();
+        _diagnostics.Clear();
         _statusMessage = "Descargando y extrayendo listado de productos...";
         StateHasChanged();
 
@@ -542,6 +562,7 @@
             if (result.Exitoso)
             {
                 _scrapedProducts = result.Productos;
+                _diagnostics = result.Diagnosticos;
                 await CheckExistingProductsAsync();
 
                 // Habilitar aprendizaje si hay selectores activos que se puedan guardar

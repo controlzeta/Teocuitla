@@ -37,6 +37,9 @@ namespace Teocuitla.Shared.Helpers
         public string? LearnedSelectorLink { get; set; }
         public string? LearnedSelectorImagen { get; set; }
         public string? LearnedSelectorPaginador { get; set; }
+
+        // Diagnósticos detallados de la corrida
+        public List<string> Diagnosticos { get; set; } = new();
     }
 
     public class CategoryScraper
@@ -138,60 +141,86 @@ namespace Teocuitla.Shared.Helpers
                     }
 
                     int productosEnPagina = 0;
+                    int cardIndex = 0;
                     foreach (var cardNode in productNodes)
                     {
+                        cardIndex++;
+                        string? link = null;
+                        string? sku = null;
                         try
                         {
-                            // Extraer Enlace
-                            string? link = null;
+                            // Extraer Enlace (con soporte expandido para SPAs y click-tracking)
                             if (linkSelector == "self" || linkSelector == ".")
                             {
-                                link = GetFirstNonEmptyAttribute(cardNode, "href");
+                                link = GetFirstValidAttribute(cardNode, "href", "data-href", "data-url", "data-permalink", "data-path", "pathname");
                             }
                             else if (!string.IsNullOrWhiteSpace(linkSelector))
                             {
                                 var linkNode = cardNode.SelectSingleNode(linkSelector);
                                 if (linkNode != null)
                                 {
-                                    link = GetFirstNonEmptyAttribute(linkNode, "href");
+                                    link = GetFirstValidAttribute(linkNode, "href", "data-href", "data-url", "data-permalink", "data-path", "pathname");
                                 }
                             }
                             
-                            // Si no se obtuvo enlace, intentar un fallback rápido al primer tag 'a'
+                            // Si no se obtuvo enlace o no es válido, intentar un fallback buscando en todos los tags 'a'
                             if (string.IsNullOrEmpty(link))
                             {
-                                var fallbackLinkNode = cardNode.Name == "a" ? cardNode : cardNode.SelectSingleNode(".//a[@href]");
-                                if (fallbackLinkNode != null)
+                                if (cardNode.Name == "a")
                                 {
-                                    link = GetFirstNonEmptyAttribute(fallbackLinkNode, "href");
+                                    link = GetFirstValidAttribute(cardNode, "href", "data-href", "data-url");
+                                }
+                                
+                                if (string.IsNullOrEmpty(link))
+                                {
+                                    var allLinks = cardNode.SelectNodes(".//a");
+                                    if (allLinks != null)
+                                    {
+                                        foreach (var aNode in allLinks)
+                                        {
+                                            var candidate = GetFirstValidAttribute(aNode, "href", "data-href", "data-url", "data-permalink", "data-path", "pathname");
+                                            if (!string.IsNullOrEmpty(candidate))
+                                            {
+                                                link = candidate;
+                                                break;
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
-                            if (string.IsNullOrEmpty(link)) continue;
+                            if (string.IsNullOrEmpty(link))
+                            {
+                                resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Omitida: No se detectó ningún enlace de producto en la tarjeta.");
+                                continue;
+                            }
                             link = MakeAbsoluteUrl(link, sitio.UrlBase);
 
-                            // Extraer Nombre (con decodificación completa de entidades HTML)
+                            // Extraer Nombre (con decodificación y limpieza de insignias/ruido de promoción)
                             string nombre = string.Empty;
                             if (!string.IsNullOrWhiteSpace(nombreSelector))
                             {
                                 var nombreNode = cardNode.SelectSingleNode(nombreSelector);
-                                nombre = nombreNode != null ? HtmlEntity.DeEntitize(nombreNode.InnerText).Trim() : string.Empty;
+                                nombre = ExtraerNombreLimpio(nombreNode);
                             }
                             if (string.IsNullOrEmpty(nombre))
                             {
                                 // Fallback a texto del link o primer encabezado
                                 var fallbackNameNode = cardNode.SelectSingleNode(".//h3") ?? cardNode.SelectSingleNode(".//h2") ?? cardNode.SelectSingleNode(".//a");
-                                nombre = fallbackNameNode != null ? HtmlEntity.DeEntitize(fallbackNameNode.InnerText).Trim() : string.Empty;
+                                nombre = ExtraerNombreLimpio(fallbackNameNode);
                             }
-                            if (string.IsNullOrEmpty(nombre)) continue;
+                            if (string.IsNullOrEmpty(nombre))
+                            {
+                                resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Omitida: No se pudo extraer el título del producto. Enlace: {link}");
+                                continue;
+                            }
 
-                            // Extraer Precio con Heurística de Mínimo Precio (Dual Pricing)
+                            // Extraer Precio con Heurística de Mínimo Precio (Dual Pricing) y Extracción Estructurada
                             decimal precio = 0;
                             if (!string.IsNullOrWhiteSpace(precioSelector))
                             {
                                 var precioNode = cardNode.SelectSingleNode(precioSelector);
-                                var precioTexto = precioNode?.InnerText;
-                                var precioParsed = ParsePrice(precioTexto);
+                                var precioParsed = ExtraerPrecioEstructurado(precioNode) ?? ParsePrice(precioNode?.InnerText);
                                 if (precioParsed.HasValue)
                                 {
                                     precio = precioParsed.Value;
@@ -207,11 +236,9 @@ namespace Teocuitla.Shared.Helpers
                                     var preciosEncontrados = new List<decimal>();
                                     foreach (var pNode in posiblesNodosPrecio)
                                     {
-                                        // Ignorar nodos que son demasiado grandes o contienen demasiada estructura
                                         if (pNode.ChildNodes.Count(c => c.Name != "#text") > 3) continue;
 
-                                        var txt = pNode.InnerText;
-                                        var parsed = ParsePrice(txt);
+                                        var parsed = ExtraerPrecioEstructurado(pNode) ?? ParsePrice(pNode.InnerText);
                                         if (parsed.HasValue && parsed.Value > 0)
                                         {
                                             preciosEncontrados.Add(parsed.Value);
@@ -220,14 +247,13 @@ namespace Teocuitla.Shared.Helpers
 
                                     if (preciosEncontrados.Any())
                                     {
-                                        // Buscar si hay alguna etiqueta que indique promoción explícita
                                         var promoNodes = cardNode.SelectNodes(".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'efectivo') or contains(@class, 'cash') or contains(@class, 'current')]");
                                         decimal? promoPrecio = null;
                                         if (promoNodes != null)
                                         {
                                             foreach (var pNode in promoNodes)
                                             {
-                                                var parsed = ParsePrice(pNode.InnerText);
+                                                var parsed = ExtraerPrecioEstructurado(pNode) ?? ParsePrice(pNode.InnerText);
                                                 if (parsed.HasValue && parsed.Value > 0)
                                                 {
                                                     promoPrecio = parsed.Value;
@@ -241,22 +267,19 @@ namespace Teocuitla.Shared.Helpers
                                 }
                             }
 
-                            // Extraer Imagen (soportando técnicas de Lazy Loading de PWAs como Liverpool y Costco)
+                            if (precio == 0)
+                            {
+                                resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Aviso: Se extrajo el producto '{nombre}' pero el precio quedó en $0.00. Revisa los selectores.");
+                            }
+
+                            // Extraer Imagen (soportando srcset de alta resolución, picture/source y lazy loading)
                             string? imagenUrl = null;
                             if (!string.IsNullOrWhiteSpace(imagenSelector))
                             {
                                 var imgNode = cardNode.SelectSingleNode(imagenSelector);
                                 if (imgNode != null)
                                 {
-                                    // Primero intentar atributos de carga perezosa de alta resolución
-                                    imagenUrl = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original", "src", "href");
-
-                                    // Si el enlace apunta a un marcador de posición transparente de 1x1 o spinner, buscar el real
-                                    if (imagenUrl != null && (imagenUrl.StartsWith("data:image") || imagenUrl.Contains("blank") || imagenUrl.Contains("placeholder") || imagenUrl.Contains("transparent")))
-                                    {
-                                        var ds = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original");
-                                        if (!string.IsNullOrEmpty(ds)) imagenUrl = ds;
-                                    }
+                                    imagenUrl = ExtraerMejorImagen(imgNode);
                                 }
                             }
                             if (string.IsNullOrEmpty(imagenUrl))
@@ -264,22 +287,20 @@ namespace Teocuitla.Shared.Helpers
                                 var fallbackImgNode = cardNode.SelectSingleNode(".//img");
                                 if (fallbackImgNode != null)
                                 {
-                                    imagenUrl = GetFirstNonEmptyAttribute(fallbackImgNode, "data-src", "data-lazy-src", "src");
-
-                                    if (imagenUrl != null && (imagenUrl.StartsWith("data:image") || imagenUrl.Contains("blank") || imagenUrl.Contains("placeholder") || imagenUrl.Contains("transparent")))
-                                    {
-                                        var ds = GetFirstNonEmptyAttribute(fallbackImgNode, "data-src", "data-lazy-src");
-                                        if (!string.IsNullOrEmpty(ds)) imagenUrl = ds;
-                                    }
+                                    imagenUrl = ExtraerMejorImagen(fallbackImgNode);
                                 }
                             }
                             if (!string.IsNullOrEmpty(imagenUrl))
                             {
                                 imagenUrl = MakeAbsoluteUrl(imagenUrl, sitio.UrlBase);
                             }
+                            else
+                            {
+                                resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Aviso: No se localizó ninguna imagen para el producto '{nombre}'. Enlace: {link}");
+                            }
 
                             // Deducir SKU a partir de la URL del producto de forma heurística
-                            string sku = DeducirSkuDeUrl(link);
+                            sku = DeducirSkuDeUrl(link);
 
                             resultadoGlobal.Productos.Add(new CategoryProductResult
                             {
@@ -291,9 +312,9 @@ namespace Teocuitla.Shared.Helpers
                             });
                             productosEnPagina++;
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // Ignorar errores individuales en tarjetas malformadas de la cuadrícula
+                            resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Error crítico al procesar tarjeta: {ex.Message}. Enlace: {link ?? "N/A"}");
                         }
                     }
 
@@ -505,127 +526,117 @@ namespace Teocuitla.Shared.Helpers
             public string Paginador { get; set; } = string.Empty;
         }
 
-        private static HeuristicSelectors? DetectSelectorsHeuristic(HtmlDocument doc, string baseUrl)
+        public static HeuristicSelectors? DetectSelectorsHeuristic(HtmlDocument doc, string baseUrl)
         {
-            // Heurística de detección de listado de productos analizando el DOM
+            // Heurística avanzada de detección por repetición de estructura DOM (libre de clases fijas)
             try
             {
-                // 1. Encontrar todos los elementos que parecen precios
-                var priceTextNodes = new List<HtmlNode>();
-                var allTextNodes = doc.DocumentNode.SelectNodes("//text()");
-                if (allTextNodes == null) return null;
+                var allNodes = doc.DocumentNode.Descendants().ToList();
+                var candidates = new List<HtmlNode>();
 
-                foreach (var node in allTextNodes)
+                // 1. Identificar nodos del DOM que contienen individualmente la estructura básica de un producto
+                foreach (var node in allNodes)
                 {
-                    // Ignorar nodos en scripts, styles, header, footer y otras áreas de ruido
-                    if (EsNodoDeRuido(node)) continue;
+                    if (node.Name == "#text" || node.Name == "#comment" || EsNodoDeRuido(node)) continue;
 
-                    var text = node.InnerText.Trim();
-                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    // Debe tener un enlace (o ser uno mismo)
+                    var hasLink = node.Name == "a" || 
+                                  node.Attributes.Contains("href") || 
+                                  node.Attributes.Contains("data-href") || 
+                                  node.Attributes.Contains("data-url") || 
+                                  node.SelectSingleNode(".//*[@href or @data-href or @data-url or @data-permalink or @data-path]") != null;
 
-                    // Quitar espaciados múltiples internos y newlines para normalizar
-                    var cleanText = Regex.Replace(text, @"\s+", " ").Trim();
+                    // Debe tener al menos una imagen (o ser una o tener estilo de fondo)
+                    var hasImg = node.Name == "img" || 
+                                 node.SelectSingleNode(".//img | .//picture | .//source") != null ||
+                                 (node.GetAttributeValue("style", "").Contains("background-image") || node.SelectSingleNode(".//*[contains(@style, 'background-image')]") != null);
 
-                    // Candidato 1: Coincide con patrones monetarios (ej: $1,234.56, MXN $99.00, $15,999)
-                    var matchesPricePattern = Regex.IsMatch(cleanText, @"(?:\$|MXN|USD)\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\b") || 
-                                              Regex.IsMatch(cleanText, @"^\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$");
+                    // Debe tener algún precio (detectado estructuradamente, con signo de pesos o clases/IDs de precio)
+                    var hasPrice = node.SelectSingleNode(".//*[contains(text(), '$') or contains(text(), 'MXN') or contains(text(), 'USD') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money') or contains(@class, 'fraction') or contains(@class, 'cost') or contains(@class, 'costo')]") != null;
 
-                    if (matchesPricePattern && text.Any(char.IsDigit))
+                    if (hasLink && hasImg && hasPrice)
                     {
-                        priceTextNodes.Add(node.ParentNode);
-                        continue;
-                    }
-
-                    // Candidato 2: El padre contiene clases semánticas de precio y el texto tiene dígitos
-                    var parent = node.ParentNode;
-                    if (parent != null)
-                    {
-                        var parentClass = parent.GetAttributeValue("class", "").ToLower();
-                        if ((parentClass.Contains("price") || parentClass.Contains("precio") || parentClass.Contains("amount")) && 
-                            text.Any(char.IsDigit) && text.Length < 35)
-                        {
-                            priceTextNodes.Add(parent);
-                        }
+                        candidates.Add(node);
                     }
                 }
 
-                if (priceTextNodes.Count < 3) return null; // Necesitamos al menos 3 elementos para deducir un patrón
+                if (!candidates.Any()) return null;
 
-                // 2. Para cada precio, subir en el DOM e identificar un contenedor común repetitivo
-                var candidatePaths = new Dictionary<string, int>();
-                foreach (var priceNode in priceTextNodes)
+                // 2. Filtrar para quedarnos únicamente con los candidatos "hoja" (los contenedores más internos)
+                var leafCandidates = new List<HtmlNode>();
+                foreach (var candidate in candidates)
                 {
-                    var current = priceNode;
-                    int level = 0;
-                    while (current != null && level < 6)
+                    bool hasDescendantCandidate = candidate.Descendants().Any(d => candidates.Contains(d));
+                    if (!hasDescendantCandidate)
                     {
-                        // Verificar si este ancestro tiene un tag 'a' (link de producto) y una imagen
-                        var hasLink = current.Name == "a" || current.SelectSingleNode(".//a[@href]") != null;
-                        var hasImg = current.SelectSingleNode(".//img") != null;
-                        
-                        // En e-commerce modernos, un producto puede o no tener encabezado h2/h3.
-                        // Usamos una verificación de estructura general (título, descripción, o spans de texto)
-                        var hasStructure = current.ChildNodes.Count(c => c.Name != "#text") > 2;
-
-                        if (hasLink && hasImg && hasStructure)
-                        {
-                            var tagName = current.Name;
-                            var className = current.GetAttributeValue("class", "").Trim();
-                            
-                            var isCustomTag = tagName.Contains("-");
-                            var isProductCardClass = className.Contains("item", StringComparison.OrdinalIgnoreCase) || 
-                                                     className.Contains("product", StringComparison.OrdinalIgnoreCase) || 
-                                                     className.Contains("card", StringComparison.OrdinalIgnoreCase) || 
-                                                     className.Contains("lister", StringComparison.OrdinalIgnoreCase) ||
-                                                     className.Contains("tile", StringComparison.OrdinalIgnoreCase);
-
-                            // Si es un tag personalizado (ej: sip-product-list-item, cx-product-grid-item),
-                            // no requiere clase específica ya que la etiqueta misma es sumamente específica.
-                            string signature;
-                            if (isCustomTag)
-                            {
-                                signature = $"//{tagName}";
-                            }
-                            else
-                            {
-                                var bestClass = ObtenerMejorClaseParaFirma(className);
-                                signature = string.IsNullOrEmpty(bestClass)
-                                    ? $"//{tagName}"
-                                    : $"//{tagName}[contains(@class, '{bestClass}')]";
-                            }
-
-                            if (!candidatePaths.ContainsKey(signature))
-                            {
-                                candidatePaths[signature] = 0;
-                            }
-
-                            // Sistema de scoring ponderado
-                            int weight = 1;
-                            if (isCustomTag) weight += 4;
-                            if (isProductCardClass) weight += 3;
-
-                            candidatePaths[signature] += weight;
-                        }
-
-                        current = current.ParentNode;
-                        level++;
+                        leafCandidates.Add(candidate);
                     }
                 }
 
-                if (!candidatePaths.Any()) return null;
+                if (!leafCandidates.Any()) return null;
 
-                // Seleccionar el patrón de contenedor más frecuente
-                var bestContainerSignature = candidatePaths.OrderByDescending(x => x.Value).First().Key;
+                // 3. Agrupar los candidatos usando anclas estables y caminos estructurales relativos
+                var groups = leafCandidates
+                    .Select(n => {
+                        var (anchor, path) = ObtenerAnclaYCamino(n);
+                        return new { Node = n, Key = new StructuralGroupKey { AnchorNode = anchor, RelativePath = path } };
+                    })
+                    .GroupBy(x => x.Key)
+                    .Select(g => new { Key = g.Key, Children = g.Select(x => x.Node).ToList(), Count = g.Count() })
+                    .Where(g => g.Count >= 3) // Al menos 3 repeticiones hermanas para ser considerado un lister
+                    .OrderByDescending(g => g.Count)
+                    .ToList();
 
-                // 3. Deducir selectores relativos de los elementos dentro del contenedor
+                if (!groups.Any()) return null;
+
+                var winningGroup = groups.First();
+                var anchorNode = winningGroup.Key.AnchorNode;
+                var relativePath = winningGroup.Key.RelativePath;
+
+                // 4. Generar el selector de contenedor robusto del ancla + el camino relativo estructural
+                string containerSelector;
+                if (anchorNode != null)
+                {
+                    var anchorId = anchorNode.GetAttributeValue("id", "").Trim();
+                    if (!string.IsNullOrEmpty(anchorId) && !Regex.IsMatch(anchorId, @"\d{4,}") && !anchorId.Contains("ember") && !anchorId.Contains("ng-"))
+                    {
+                        containerSelector = $"//*[@id='{anchorId}']";
+                    }
+                    else
+                    {
+                        // Generar ruta estructural simple hasta el nodo ancla
+                        var pathElements = new List<string>();
+                        var cur = anchorNode;
+                        while (cur != null && cur.Name != "#document" && cur.Name != "html")
+                        {
+                            pathElements.Insert(0, cur.Name);
+                            cur = cur.ParentNode;
+                        }
+                        containerSelector = "//" + string.Join("/", pathElements);
+                    }
+                    
+                    if (!string.IsNullOrEmpty(relativePath))
+                    {
+                        containerSelector += "/" + relativePath;
+                    }
+                }
+                else
+                {
+                    return null;
+                }
+
+                // Filtro de validación estructural
+                containerSelector += "[.//a and .//img]";
+
+                // 5. Deducir selectores relativos robustos y libres de clases fijas
                 var selectors = new HeuristicSelectors
                 {
-                    Container = bestContainerSignature,
-                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//h6[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'description') or contains(@class, 'desc') or contains(@class, 'label')][1] | .//a[@href][1]",
-                    Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'efectivo') or contains(@class, 'cash') or contains(@class, 'current')][1] | .//*[contains(@class, 'price')][1] | .//*[contains(@class, 'precio')][1] | .//*[contains(@class, 'amount')][1] | .//*[contains(text(), '$')][1]",
-                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'thumb')][1] | .//a[@href][1]",
-                    Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'thumb')][1] | .//img[1]",
-                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente')][1] | //a[contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
+                    Container = containerSelector,
+                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')][not(self::a) or text()][1] | .//a[text() and @href][1] | .//a[@href][1]",
+                    Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'current') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money')][contains(text(), '$') or .//*[contains(text(), '$')]][1] | .//*[contains(text(), '$')][1] | .//*[contains(@class, 'price') or contains(@class, 'precio')][1]",
+                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'link')][1] | .//a[@href][1]",
+                    Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'image') or contains(@class, 'img')][1] | .//img[1] | .//*[contains(@style, 'background-image')][1]",
+                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente') or contains(@aria-label, 'siguiente') or contains(@title, 'siguiente') or contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
                 };
 
                 return selectors;
@@ -634,6 +645,35 @@ namespace Teocuitla.Shared.Helpers
             {
                 return null;
             }
+        }
+
+        private static string GenerarRutaEstructuralSinClases(HtmlNode node)
+        {
+            var pathElements = new List<string>();
+            var current = node;
+            int levels = 0;
+            
+            // Subir hasta 4 niveles o hasta encontrar un ancestro con un ID estable
+            while (current != null && current.Name != "#document" && current.Name != "html" && levels < 4)
+            {
+                var id = current.GetAttributeValue("id", "").Trim();
+                // Si tiene un ID que parece estable (no autogenerado con números aleatorios)
+                if (!string.IsNullOrEmpty(id) && !Regex.IsMatch(id, @"\d{4,}") && !id.Contains("ember") && !id.Contains("ng-") && !id.Contains("layout"))
+                {
+                    pathElements.Insert(0, $"*[@id='{id}']");
+                    break;
+                }
+                
+                pathElements.Insert(0, current.Name);
+                current = current.ParentNode;
+                levels++;
+            }
+
+            var xpath = "//" + string.Join("/", pathElements);
+            
+            // Filtro de validación estructural para asegurar que los nodos seleccionados sean cards válidas
+            xpath += "[.//a and .//img]";
+            return xpath;
         }
 
         private static bool EsNodoDeRuido(HtmlNode node)
@@ -701,7 +741,7 @@ namespace Teocuitla.Shared.Helpers
             }
 
             // 2. Priorizar clases semánticas de e-commerce
-            var keywords = new[] { "product", "producto", "item", "card", "tarjeta", "lister", "tile", "entry", "article" };
+            var keywords = new[] { "product", "producto", "item", "card", "tarjeta", "lister", "tile", "entry", "article", "result", "resultado" };
             foreach (var kw in keywords)
             {
                 var match = clasesFiltradas.FirstOrDefault(c => c.Contains(kw, StringComparison.OrdinalIgnoreCase));
@@ -728,6 +768,249 @@ namespace Teocuitla.Shared.Helpers
             return null;
         }
 
+        public static decimal? ExtraerPrecioEstructurado(HtmlNode priceNode)
+        {
+            if (priceNode == null) return null;
+
+            // Excluir elementos tachados (precios anteriores/lista)
+            var cleanPriceNode = priceNode.CloneNode(true);
+            var struckNodes = cleanPriceNode.SelectNodes(".//*[contains(@style, 'line-through') or name()='del' or name()='s' or contains(@class, 'old') or contains(@class, 'original') or contains(@class, 'list-price')]");
+            if (struckNodes != null)
+            {
+                foreach (var sNode in struckNodes)
+                {
+                    try { sNode.Remove(); } catch { }
+                }
+            }
+
+            // Excluir elementos de ruido promocional (porcentaje de descuento, insignias de envío, etc.) que puedan interferir con los dígitos del precio
+            var promoNoiseNodes = cleanPriceNode.SelectNodes(".//*[contains(@class, 'promo') or contains(@class, 'discount') or contains(@class, 'badge') or contains(@class, 'tag') or contains(@class, 'offer') or contains(@class, 'sale') or contains(@class, 'shipping') or contains(@class, 'envio') or contains(@class, 'ahorro') or contains(@class, 'flag') or contains(text(), '%') or contains(text(), 'OFF')]");
+            if (promoNoiseNodes != null)
+            {
+                foreach (var pNode in promoNoiseNodes)
+                {
+                    try { pNode.Remove(); } catch { }
+                }
+            }
+
+            // 1. Intentar buscar por clases explícitas
+            var wholeNode = cleanPriceNode.SelectSingleNode(".//*[contains(@class, 'fraction') or contains(@class, 'whole') or contains(@class, 'integer') or contains(@class, 'price-whole') or contains(@class, 'main-price') or contains(@class, 'amount') or contains(@class, 'price-amount')]");
+            var centsNode = cleanPriceNode.SelectSingleNode(".//*[contains(@class, 'cents') or contains(@class, 'decimal') or contains(@class, 'fraction-cents') or contains(@class, 'price-cents') or contains(@class, 'centavos')]");
+
+            // Fallback: Si no se encuentran por clases explícitas, buscar todos los elementos hoja con números
+            if (wholeNode == null || centsNode == null)
+            {
+                var leafDigitNodes = cleanPriceNode.Descendants()
+                    .Where(n => !n.HasChildNodes && Regex.IsMatch(n.InnerText, @"\d+"))
+                    .ToList();
+
+                if (leafDigitNodes.Count >= 2)
+                {
+                    var firstText = leafDigitNodes[0].InnerText.Trim();
+                    var secondText = leafDigitNodes[1].InnerText.Trim();
+                    
+                    var firstDigits = Regex.Replace(firstText, @"\D", "");
+                    var secondDigits = Regex.Replace(secondText, @"\D", "");
+
+                    if (!string.IsNullOrEmpty(firstDigits) && !string.IsNullOrEmpty(secondDigits) && secondDigits.Length <= 2)
+                    {
+                        wholeNode = leafDigitNodes[0];
+                        centsNode = leafDigitNodes[1];
+                    }
+                }
+            }
+
+            // Si el nodo de centavos es exactamente el mismo que el entero, descartarlo
+            if (wholeNode != null && centsNode != null && wholeNode.XPath == centsNode.XPath)
+            {
+                centsNode = null;
+            }
+
+            if (wholeNode != null)
+            {
+                var wholeText = wholeNode.InnerText.Trim();
+                var centsText = centsNode != null ? centsNode.InnerText.Trim() : "00";
+                
+                wholeText = Regex.Replace(wholeText, @"[^\d.,]", "");
+                centsText = Regex.Replace(centsText, @"\D", "");
+                
+                if (centsText.Length == 1) centsText += "0";
+                if (centsText.Length > 2) centsText = centsText.Substring(0, 2);
+                if (string.IsNullOrEmpty(centsText)) centsText = "00";
+
+                var combined = $"{wholeText}.{centsText}";
+                return ParsePrice(combined);
+            }
+
+            return null;
+        }
+
+        public static string? ExtraerMejorImagen(HtmlNode imgNode)
+        {
+            if (imgNode == null) return null;
+
+            // 1. Si es un elemento 'picture' o el padre es 'picture', buscar en los elementos 'source'
+            var pictureNode = imgNode.Name == "picture" ? imgNode : (imgNode.ParentNode?.Name == "picture" ? imgNode.ParentNode : null);
+            if (pictureNode != null)
+            {
+                var sources = pictureNode.SelectNodes(".//source[@srcset]");
+                if (sources != null)
+                {
+                    foreach (var source in sources)
+                    {
+                        var sourceSrcset = source.GetAttributeValue("srcset", null);
+                        if (!string.IsNullOrWhiteSpace(sourceSrcset))
+                        {
+                            var url = ObtenerUrlDeMayorResolucion(sourceSrcset);
+                            if (!string.IsNullOrEmpty(url)) return url;
+                        }
+                    }
+                }
+            }
+
+            // 2. Intentar buscar en data-srcset o srcset del propio nodo
+            var srcset = imgNode.GetAttributeValue("data-srcset", null) ?? imgNode.GetAttributeValue("srcset", null);
+            if (!string.IsNullOrWhiteSpace(srcset))
+            {
+                var url = ObtenerUrlDeMayorResolucion(srcset);
+                if (!string.IsNullOrEmpty(url)) return url;
+            }
+
+            // 3. Fallback a atributos de fuente tradicionales de lazy loading
+            var imagenUrl = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original", "data-zoom-image", "data-responsive-image", "data-img-src", "src");
+
+            // Si el enlace apunta a un marcador de posición transparente o spinner, buscar el real en data
+            if (imagenUrl != null && (imagenUrl.StartsWith("data:image") || imagenUrl.Contains("blank") || imagenUrl.Contains("placeholder") || imagenUrl.Contains("transparent")))
+            {
+                var ds = GetFirstNonEmptyAttribute(imgNode, "data-src", "data-lazy-src", "data-original", "data-zoom-image", "data-responsive-image", "data-img-src");
+                if (!string.IsNullOrEmpty(ds)) imagenUrl = ds;
+            }
+
+            // 4. Fallback a estilo de imagen de fondo (background-image) en inline CSS
+            if (string.IsNullOrEmpty(imagenUrl))
+            {
+                var style = imgNode.GetAttributeValue("style", null);
+                if (!string.IsNullOrWhiteSpace(style))
+                {
+                    var match = Regex.Match(style, @"background-image\s*:\s*url\s*\(\s*['""]?(.*?)['""]?\s*\)", RegexOptions.IgnoreCase);
+                    if (match.Success)
+                    {
+                        imagenUrl = match.Groups[1].Value;
+                    }
+                    else
+                    {
+                        var matchBg = Regex.Match(style, @"background\s*:\s*[^;]*url\s*\(\s*['""]?(.*?)['""]?\s*\)", RegexOptions.IgnoreCase);
+                        if (matchBg.Success)
+                        {
+                            imagenUrl = matchBg.Groups[1].Value;
+                        }
+                    }
+                }
+            }
+
+            return imagenUrl;
+        }
+
+        private static string? ObtenerUrlDeMayorResolucion(string srcset)
+        {
+            try
+            {
+                var parts = srcset.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (!parts.Any()) return null;
+
+                string? bestUrl = null;
+                double maxRes = 0;
+
+                foreach (var part in parts)
+                {
+                    var subParts = part.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (subParts.Length == 0) continue;
+
+                    var url = subParts[0];
+                    double res = 1; // Resolución base por defecto
+
+                    if (subParts.Length > 1)
+                    {
+                        var descriptor = subParts[1].ToLower().Trim();
+                        if (descriptor.EndsWith("w"))
+                        {
+                            if (double.TryParse(descriptor.TrimEnd('w'), out var width))
+                            {
+                                res = width;
+                            }
+                        }
+                        else if (descriptor.EndsWith("x"))
+                        {
+                            if (double.TryParse(descriptor.TrimEnd('x'), out var density))
+                            {
+                                res = density * 1000; // Normalizar para comparar con anchos
+                            }
+                        }
+                    }
+
+                    if (res > maxRes || bestUrl == null)
+                    {
+                        maxRes = res;
+                        bestUrl = url;
+                    }
+                }
+
+                return bestUrl;
+            }
+            catch { /* ignore */ }
+            return null;
+        }
+
+        public static string ExtraerNombreLimpio(HtmlNode nombreNode)
+        {
+            if (nombreNode == null) return string.Empty;
+
+            // Clonar el nodo para no alterar el DOM original del documento
+            var clone = nombreNode.CloneNode(true);
+            
+            // Buscar y remover elementos de ruido internos (como etiquetas de descuento, insignias, "Envío Gratis", etc.)
+            var ruidoNodes = clone.SelectNodes(".//*[contains(@class, 'promo') or contains(@class, 'discount') or contains(@class, 'badge') or contains(@class, 'tag') or contains(@class, 'offer') or contains(@class, 'sale') or contains(@class, 'shipping') or contains(@class, 'envio') or contains(@class, 'ahorro') or contains(@class, 'flag') or contains(text(), '%') or contains(text(), 'OFF')]");
+            if (ruidoNodes != null)
+            {
+                foreach (var rNode in ruidoNodes)
+                {
+                    try
+                    {
+                        rNode.Remove();
+                    }
+                    catch { /* ignore */ }
+                }
+            }
+
+            var text = HtmlEntity.DeEntitize(clone.InnerText).Trim();
+            // Normalizar espacios en blanco múltiples
+            text = Regex.Replace(text, @"\s+", " ").Trim();
+            
+            // Remover ruido de texto plano común de promociones y envíos
+            var cleanText = text;
+            var patterns = new[]
+            {
+                @"\b\d+\s*%\s*OFF\b",
+                @"\b(?:envío|envio)\s+gratis\b",
+                @"\bfree\s+shipping\b",
+                @"\b\d+\s*(?:msi|meses\s+sin\s+intereses)\b",
+                @"\bllega\s+mañana\b",
+                @"\b(?:oferta|descuento|ahorro|promoción|promocion)\b"
+            };
+
+            foreach (var pattern in patterns)
+            {
+                cleanText = Regex.Replace(cleanText, pattern, "", RegexOptions.IgnoreCase).Trim();
+            }
+            
+            // Limpiar guiones o barras huérfanas al final del texto debido a la limpieza
+            cleanText = Regex.Replace(cleanText, @"\s*[-|•/]\s*$", "").Trim();
+            // Normalizar múltiples espacios nuevamente
+            cleanText = Regex.Replace(cleanText, @"\s+", " ").Trim();
+            
+            return cleanText;
+        }
+
         private static string MakeAbsoluteUrl(string url, string baseUrl)
         {
             if (string.IsNullOrWhiteSpace(url)) return url;
@@ -750,7 +1033,70 @@ namespace Teocuitla.Shared.Helpers
             }
             return url;
         }
-    }
-}
+
+        public static bool EsEnlaceValido(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            url = url.Trim().ToLower();
+            return !url.StartsWith("javascript:") && 
+                   url != "#" && 
+                   url != "/" && 
+                   !url.StartsWith("tel:") && 
+                   !url.StartsWith("mailto:");
+        }
+
+        private static string? GetFirstValidAttribute(HtmlNode node, params string[] attributeNames)
+        {
+            foreach (var attr in attributeNames)
+            {
+                var val = node.GetAttributeValue(attr, null)?.Trim();
+                if (EsEnlaceValido(val))
+                {
+                    return val;
+                }
+            }
+            return null;
+        }
+
+        private static (HtmlNode Anchor, string Path) ObtenerAnclaYCamino(HtmlNode node)
+        {
+            var current = node;
+            var pathElements = new List<string>();
+            int levels = 0;
+            
+            while (current.ParentNode != null && current.Name != "#document" && current.Name != "html" && current.Name != "body" && levels < 5)
+            {
+                var id = current.GetAttributeValue("id", "").Trim();
+                if (!string.IsNullOrEmpty(id) && !Regex.IsMatch(id, @"\d{4,}") && !id.Contains("ember") && !id.Contains("ng-") && !id.Contains("layout"))
+                {
+                    break;
+                }
+                pathElements.Insert(0, current.Name);
+                current = current.ParentNode;
+                levels++;
+            }
+            
+            return (current, string.Join("/", pathElements));
+        }
+
+        internal class StructuralGroupKey
+        {
+            public HtmlNode? AnchorNode { get; set; }
+            public string RelativePath { get; set; } = string.Empty;
+
+            public override bool Equals(object? obj)
+            {
+                if (obj is StructuralGroupKey other)
+                {
+                    return AnchorNode == other.AnchorNode && RelativePath == other.RelativePath;
+                }
+                return false;
+            }
+
+            public override int GetHashCode()
+            {
+                return HashCode.Combine(AnchorNode, RelativePath);
+            }
+        }
     }
 }
