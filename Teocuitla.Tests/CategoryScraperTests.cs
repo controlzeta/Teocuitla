@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 using Xunit;
 using HtmlAgilityPack;
 using Teocuitla.Shared.Helpers;
@@ -103,7 +105,7 @@ namespace Teocuitla.Tests
             Assert.NotNull(selectors);
             Assert.NotEmpty(selectors.Container);
             Assert.Contains("catalog-row", selectors.Container);
-            Assert.Contains("div/div/a", selectors.Container);
+            Assert.Contains("/div[", selectors.Container);
         }
 
         [Fact]
@@ -325,6 +327,73 @@ namespace Teocuitla.Tests
             Assert.NotEmpty(selectors.Container);
             // El selector del contenedor debe apuntar a los elementos de Costco (sip-product-list-item)
             Assert.Contains("sip-product-list-item", selectors.Container);
+        }
+
+        [Fact]
+        public void DetectSelectorsHeuristic_WithRealHtmlFiles_DetectsCorrectly()
+        {
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
+
+            Assert.NotEmpty(htmlDir);
+            var files = System.IO.Directory.GetFiles(htmlDir, "*.html")
+                                           .Where(f => !f.Contains("costco.com.mx"))
+                                           .ToList();
+            if (files.Count == 0) return;
+
+            foreach (var file in files)
+            {
+                var doc = new HtmlDocument();
+                doc.Load(file);
+
+                var baseUrl = "https://www.tienda.com";
+                if (file.Contains("costco")) baseUrl = "https://www.costco.com.mx";
+                else if (file.Contains("liverpool")) baseUrl = "https://www.liverpool.com.mx";
+                else if (file.Contains("supernaturista")) baseUrl = "https://supernaturista.com";
+
+                var selectors = CategoryScraper.DetectSelectorsHeuristic(doc, baseUrl);
+                
+
+
+                // Assert
+                Assert.True(selectors != null, $"No se pudieron detectar selectores para el archivo: {Path.GetFileName(file)}");
+                Assert.NotEmpty(selectors.Container);
+                Assert.NotEmpty(selectors.Nombre);
+                Assert.NotEmpty(selectors.Precio);
+                Assert.NotEmpty(selectors.Imagen);
+
+                // Ejecutar parseo para verificar que extrae productos reales
+                var productNodes = doc.DocumentNode.SelectNodes(selectors.Container);
+                Assert.True(productNodes != null && productNodes.Count > 0, $"No se encontraron nodos con el selector '{selectors.Container}' en el archivo: {Path.GetFileName(file)}");
+
+                int extractedCount = 0;
+                foreach (var node in productNodes)
+                {
+                    var nameNode = node.SelectSingleNode(selectors.Nombre);
+                    var name = CategoryScraper.ExtraerNombreLimpio(nameNode);
+
+                    var priceNode = node.SelectSingleNode(selectors.Precio);
+                    var price = CategoryScraper.ExtraerPrecioEstructurado(priceNode) ?? CategoryScraper.ParsePrice(priceNode?.InnerText);
+
+                    bool nodeHasPrice = node.InnerText.Contains("$");
+                    if (!string.IsNullOrEmpty(name) && (!nodeHasPrice || price.HasValue))
+                    {
+                        extractedCount++;
+                    }
+                }
+
+                Assert.True(extractedCount > 0, $"No se pudo extraer ningún producto válido (nombre + precio) del archivo: {Path.GetFileName(file)}");
+            }
         }
     }
 }

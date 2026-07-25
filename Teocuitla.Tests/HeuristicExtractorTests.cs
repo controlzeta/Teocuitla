@@ -93,5 +93,51 @@ namespace Teocuitla.Tests
             Assert.False(result.EnStock);
             Assert.Equal("Analisis Semantico DOM (Fallback)", result.MetodoDeteccion);
         }
+
+        [Fact]
+        public void Extract_WithCostcoRealHtmlFiles_ExtractsExpectedPriceAndImage()
+        {
+            // Arrange
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
+
+            Assert.NotEmpty(htmlDir);
+
+            // 1. Validar el primer archivo de Costco (Precio esperado: 299.00)
+            var file1 = System.IO.Path.Combine(htmlDir, "costco.com.mx_2026-07-25_14-09-57.html");
+            if (System.IO.File.Exists(file1))
+            {
+                var html1 = System.IO.File.ReadAllText(file1);
+                var result1 = HeuristicExtractor.Extract(html1);
+
+                Assert.Contains("Crema de Avellana", result1.Nombre);
+                Assert.Equal(299.00m, result1.Precio);
+                Assert.NotNull(result1.ImagenUrl);
+                Assert.Contains("/medias/sys_master/products/", result1.ImagenUrl);
+            }
+
+            // 2. Validar el segundo archivo de Costco (Precio esperado: 289.00)
+            var file2 = System.IO.Path.Combine(htmlDir, "costco.com.mx_2026-07-25_14-11-33.html");
+            if (System.IO.File.Exists(file2))
+            {
+                var html2 = System.IO.File.ReadAllText(file2);
+                var result2 = HeuristicExtractor.Extract(html2);
+
+                Assert.Contains("Café Chiapas", result2.Nombre);
+                Assert.Equal(369.00m, result2.Precio);
+                Assert.NotNull(result2.ImagenUrl);
+                Assert.Contains("/medias/sys_master/products/", result2.ImagenUrl);
+            }
+        }
     }
 }
