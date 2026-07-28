@@ -159,15 +159,55 @@ else
     private async Task ConfirmDeleteSitio(CatalogoSitio sitio)
     {
         bool confirm = await JS.InvokeAsync<bool>("confirm", 
-            $"¿Está seguro de que desea eliminar el sitio '{sitio.Nombre}'? Esto no eliminará los productos asociados, pero dejará de monitorear sus variantes.");
+            $"¿Está seguro de que desea eliminar el sitio '{sitio.Nombre}'? Esto eliminará todas las variantes e historial de precios asociados a este sitio.");
 
         if (confirm)
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            context.CatalogoSitios.Remove(sitio);
-            await context.SaveChangesAsync();
-            Snackbar.Add($"Sitio {sitio.Nombre} eliminado.", Severity.Success);
-            await LoadSitios();
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                using var transaction = await context.Database.BeginTransactionAsync();
+                
+                // 1. Obtener IDs de las variantes asociadas a este sitio
+                var variantIds = await context.VariantesComerciales
+                    .Where(v => v.CatalogoSitioId == sitio.Id)
+                    .Select(v => v.Id)
+                    .ToListAsync();
+                
+                if (variantIds.Any())
+                {
+                    // 2. Eliminar fallas asociadas
+                    var fallas = await context.RegistroFallasScraping
+                        .Where(f => variantIds.Contains(f.VarianteComercialId))
+                        .ToListAsync();
+                    context.RegistroFallasScraping.RemoveRange(fallas);
+                    
+                    // 3. Eliminar historial de precios asociado
+                    var historial = await context.HistorialPrecios
+                        .Where(h => variantIds.Contains(h.VarianteComercialId))
+                        .ToListAsync();
+                    context.HistorialPrecios.RemoveRange(historial);
+                    
+                    // 4. Eliminar variantes comerciales
+                    var variantes = await context.VariantesComerciales
+                        .Where(v => variantIds.Contains(v.Id))
+                        .ToListAsync();
+                    context.VariantesComerciales.RemoveRange(variantes);
+                }
+                
+                // 5. Eliminar el sitio
+                context.CatalogoSitios.Remove(sitio);
+                
+                await context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                
+                Snackbar.Add($"Sitio {sitio.Nombre} y sus variantes asociadas fueron eliminados.", Severity.Success);
+                await LoadSitios();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al eliminar el sitio: {ex.Message}", Severity.Error);
+            }
         }
     }
 

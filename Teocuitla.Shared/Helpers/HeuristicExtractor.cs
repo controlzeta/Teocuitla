@@ -13,6 +13,8 @@ namespace Teocuitla.Shared.Helpers
         public bool EnStock { get; set; } = true;
         public string? XPathSugerido { get; set; }
         public string? ImagenUrl { get; set; }
+        public string? Sku { get; set; }
+        public string? Marca { get; set; }
         public string MetodoDeteccion { get; set; } = "Ninguno";
     }
 
@@ -59,6 +61,36 @@ namespace Teocuitla.Shared.Helpers
                 }
             }
 
+            // --- COMPLEMENTAR SKU Y MARCA DESDE EL DOM SI NINGUNO DE LOS ANTERIORES LOS OBTUVO ---
+            if (string.IsNullOrEmpty(result.Sku))
+            {
+                var skuNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:retailer_item_id']")
+                              ?? doc.DocumentNode.SelectSingleNode("//meta[@itemprop='sku']")
+                              ?? doc.DocumentNode.SelectSingleNode("//meta[@name='sku']")
+                              ?? doc.DocumentNode.SelectSingleNode("//*[contains(@class, 'sku') or contains(@class, 'codigo') or contains(@id, 'sku') or contains(@id, 'codigo')]");
+                if (skuNode != null)
+                {
+                    result.Sku = DataNormalizer.NormalizeSku(skuNode.GetAttributeValue("content", skuNode.InnerText));
+                }
+            }
+
+            if (string.IsNullOrEmpty(result.Marca) || result.Marca == "Genérica")
+            {
+                var brandNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:brand']")
+                                ?? doc.DocumentNode.SelectSingleNode("//meta[@itemprop='brand']")
+                                ?? doc.DocumentNode.SelectSingleNode("//meta[@name='brand']")
+                                ?? doc.DocumentNode.SelectSingleNode("//a[contains(@href, 'vendors') or contains(@href, 'brand') or contains(@class, 'brand') or contains(@class, 'vendor') or contains(@class, 'vendor-name')]");
+                if (brandNode != null)
+                {
+                    result.Marca = DataNormalizer.NormalizeBrand(brandNode.GetAttributeValue("content", brandNode.InnerText));
+                }
+            }
+
+            if (!string.IsNullOrEmpty(result.ImagenUrl))
+            {
+                result.ImagenUrl = DataNormalizer.NormalizeImageUrl(DataNormalizer.MakeAbsoluteUrl(result.ImagenUrl, null));
+            }
+
             return result;
         }
 
@@ -96,6 +128,13 @@ namespace Teocuitla.Shared.Helpers
             return false;
         }
 
+        private static string? GetJsonStringValue(JsonElement elem)
+        {
+            if (elem.ValueKind == JsonValueKind.String) return elem.GetString();
+            if (elem.ValueKind == JsonValueKind.Number) return elem.GetRawText();
+            return null;
+        }
+
         private static bool ParseProductElement(JsonElement elem, HeuristicResult result)
         {
             if (elem.TryGetProperty("@type", out var typeProp) && typeProp.GetString() == "Product")
@@ -126,6 +165,34 @@ namespace Teocuitla.Shared.Helpers
                     else if (offersProp.ValueKind == JsonValueKind.Array && offersProp.GetArrayLength() > 0)
                     {
                         ExtractOfferDetails(offersProp[0], result);
+                    }
+                }
+
+                if (elem.TryGetProperty("sku", out var skuProp))
+                {
+                    result.Sku = DataNormalizer.NormalizeSku(GetJsonStringValue(skuProp));
+                }
+                else if (elem.TryGetProperty("gtin", out var gtinProp))
+                {
+                    result.Sku = DataNormalizer.NormalizeSku(GetJsonStringValue(gtinProp));
+                }
+                else if (elem.TryGetProperty("mpn", out var mpnProp))
+                {
+                    result.Sku = DataNormalizer.NormalizeSku(GetJsonStringValue(mpnProp));
+                }
+
+                if (elem.TryGetProperty("brand", out var brandProp))
+                {
+                    if (brandProp.ValueKind == JsonValueKind.String)
+                    {
+                        result.Marca = DataNormalizer.NormalizeBrand(brandProp.GetString());
+                    }
+                    else if (brandProp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (brandProp.TryGetProperty("name", out var brandNameProp))
+                        {
+                            result.Marca = DataNormalizer.NormalizeBrand(GetJsonStringValue(brandNameProp));
+                        }
                     }
                 }
 

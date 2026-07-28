@@ -10,6 +10,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore.Storage;
 using Teocuitla.Shared.Dtos;
 using Teocuitla.Shared.Data;
+using Teocuitla.Shared.Models;
+using Teocuitla.Shared.Helpers;
 
 namespace Teocuitla.Web.Controllers
 {
@@ -116,10 +118,14 @@ namespace Teocuitla.Web.Controllers
                     var mergeCmd = sqlConnection.CreateCommand();
                     mergeCmd.Transaction = sqlTransaction;
                     mergeCmd.CommandText = @"
-                        -- Insertar registros en el historial histórico de precios
+                        -- Insertar registros en el historial histórico de precios solo si el precio o stock cambió
                         INSERT INTO Historial_Precios (VarianteComercialId, Precio, EnStock, FechaCaptura)
-                        SELECT VarianteId, Precio, EnStock, Fecha 
-                        FROM #TempIngest;
+                        SELECT T.VarianteId, T.Precio, T.EnStock, T.Fecha 
+                        FROM #TempIngest T
+                        INNER JOIN Variantes_Comerciales V ON T.VarianteId = V.Id
+                        WHERE V.PrecioActual IS NULL 
+                           OR V.PrecioActual <> T.Precio 
+                           OR V.EnStock <> T.EnStock;
 
                         -- Actualizar el estado actual en la tabla de variantes comerciales
                         UPDATE V
@@ -164,6 +170,255 @@ namespace Teocuitla.Web.Controllers
             {
                 _logger.LogError(ex, "Error durante la ingesta masiva de precios.");
                 return StatusCode(500, $"Error interno al procesar el lote: {ex.Message}");
+            }
+        }
+
+        [HttpPost("extension")]
+        public async Task<IActionResult> IngestFromExtension([FromBody] ExtensionIngestionDto dto)
+        {
+            // 1. Validar la API Key
+            if (!Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey))
+            {
+                return Unauthorized("API Key no proporcionada.");
+            }
+
+            var configuredApiKey = _configuration["Scraping:ApiKey"] ?? "TeocuitlaDefaultApiKeySecret";
+            if (extractedApiKey != configuredApiKey)
+            {
+                return Unauthorized("API Key inválida.");
+            }
+
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Sku) || string.IsNullOrWhiteSpace(dto.UrlProducto))
+            {
+                return BadRequest("Datos de producto inválidos.");
+            }
+
+            dto.Sku = DataNormalizer.NormalizeSku(dto.Sku);
+            dto.Marca = DataNormalizer.NormalizeBrand(dto.Marca);
+            dto.ImagenUrl = DataNormalizer.NormalizeImageUrl(DataNormalizer.MakeAbsoluteUrl(dto.ImagenUrl, dto.UrlProducto));
+
+            _logger.LogInformation("Recibiendo ingesta de producto desde extensión: SKU={Sku}, Dominio={Dominio}", dto.Sku, dto.Dominio);
+
+            try
+            {
+                using (var transaction = await _context.Database.BeginTransactionAsync())
+                {
+                    // 1. Resolver o crear el sitio de catálogo
+                    var baseDomain = dto.Dominio.ToLower().Trim();
+                    var site = await _context.CatalogoSitios
+                        .FirstOrDefaultAsync(s => s.UrlBase != null && s.UrlBase.Contains(baseDomain));
+
+                    if (site == null)
+                    {
+                        site = new CatalogoSitio
+                        {
+                            Nombre = baseDomain,
+                            UrlBase = dto.UrlProducto.StartsWith("https") ? $"https://{baseDomain}" : $"http://{baseDomain}",
+                            EstrategiaEvasion = "Standard"
+                        };
+                        _context.CatalogoSitios.Add(site);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // Auto-aprendizaje/corrección de selectores a partir de la extensión
+                    bool siteUpdated = false;
+                    if (!string.IsNullOrEmpty(dto.SelectorNombreXPath) && site.SelectorNombreXPath != dto.SelectorNombreXPath)
+                    {
+                        site.SelectorNombreXPath = dto.SelectorNombreXPath;
+                        siteUpdated = true;
+                    }
+                    if (!string.IsNullOrEmpty(dto.SelectorPrecioXPath) && site.SelectorPrecioXPath != dto.SelectorPrecioXPath)
+                    {
+                        site.SelectorPrecioXPath = dto.SelectorPrecioXPath;
+                        siteUpdated = true;
+                    }
+                    if (!string.IsNullOrEmpty(dto.SelectorImagenXPath) && site.SelectorImagenXPath != dto.SelectorImagenXPath)
+                    {
+                        site.SelectorImagenXPath = dto.SelectorImagenXPath;
+                        siteUpdated = true;
+                    }
+
+                    if (siteUpdated)
+                    {
+                        _context.CatalogoSitios.Update(site);
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Selectores corregidos/actualizados automáticamente para el sitio {Nombre} desde la extensión.", site.Nombre);
+                    }
+
+                    // 2. Buscar variante comercial existente por SKU y Sitio
+                    var variant = await _context.VariantesComerciales
+                        .FirstOrDefaultAsync(v => v.Sku == dto.Sku && v.CatalogoSitioId == site.Id);
+
+                    bool priceChanged = false;
+
+                    if (variant != null)
+                    {
+                        priceChanged = variant.PrecioActual != dto.Precio || variant.EnStock != (dto.Precio > 0);
+
+                        // Actualizar variante
+                        variant.PrecioAnterior = variant.PrecioActual;
+                        variant.PrecioActual = dto.Precio;
+                        variant.EnStock = dto.Precio > 0;
+                        variant.UltimaActualizacion = DateTime.Now;
+                        if (!string.IsNullOrEmpty(dto.ImagenUrl))
+                        {
+                            variant.ImagenUrl = dto.ImagenUrl;
+                        }
+                        
+                        _context.VariantesComerciales.Update(variant);
+                        await _context.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        priceChanged = true;
+
+                        // Buscar si existe un producto maestro por nombre y marca
+                        var masterProduct = await _context.ProductosMaestros
+                            .FirstOrDefaultAsync(p => p.Nombre == dto.Nombre && p.Marca == dto.Marca);
+
+                        if (masterProduct == null)
+                        {
+                            masterProduct = new ProductoMaestro
+                            {
+                                Nombre = dto.Nombre,
+                                Marca = dto.Marca,
+                                Categoria = "Extensión de Navegador",
+                                Descripcion = "Ingresado mediante extensión de Chrome",
+                                FechaCreacion = DateTime.Now
+                            };
+                            _context.ProductosMaestros.Add(masterProduct);
+                            await _context.SaveChangesAsync();
+                        }
+
+                        // Crear variante
+                        variant = new VarianteComercial
+                        {
+                            ProductoMaestroId = masterProduct.Id,
+                            CatalogoSitioId = site.Id,
+                            Sku = dto.Sku,
+                            Nombre = dto.Nombre,
+                            UrlProducto = dto.UrlProducto,
+                            PrecioActual = dto.Precio,
+                            EnStock = dto.Precio > 0,
+                            UltimaActualizacion = DateTime.Now,
+                            ImagenUrl = dto.ImagenUrl
+                        };
+                        _context.VariantesComerciales.Add(variant);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // 3. Registrar en historial de precios solo si cambió
+                    if (priceChanged)
+                    {
+                        var history = new HistorialPrecio
+                        {
+                            VarianteComercialId = variant.Id,
+                            Precio = dto.Precio,
+                            EnStock = dto.Precio > 0,
+                            FechaCaptura = DateTime.Now
+                        };
+                        _context.HistorialPrecios.Add(history);
+                    }
+                    
+                    // Actualizar fecha de último rastreo del sitio
+                    site.UltimoRastreo = DateTime.Now;
+                    _context.CatalogoSitios.Update(site);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+
+                return Ok(new { Message = "Producto ingerido con éxito desde la extensión.", Sku = dto.Sku });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al procesar ingesta desde extensión.");
+                return StatusCode(500, $"Error interno: {ex.Message}");
+            }
+        }
+
+        [HttpGet("sites")]
+        public async Task<IActionResult> GetConfiguredSites()
+        {
+            // 1. Validar la API Key
+            if (!Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey))
+            {
+                return Unauthorized("API Key no proporcionada.");
+            }
+
+            var configuredApiKey = _configuration["Scraping:ApiKey"] ?? "TeocuitlaDefaultApiKeySecret";
+            if (extractedApiKey != configuredApiKey)
+            {
+                return Unauthorized("API Key inválida.");
+            }
+
+            try
+            {
+                var sites = await _context.CatalogoSitios
+                    .Where(s => s.Activo)
+                    .Select(s => new {
+                        s.Id,
+                        s.Nombre,
+                        s.UrlBase,
+                        s.SelectorProductoXPath,
+                        s.SelectorPrecioXPath,
+                        s.SelectorStockXPath,
+                        s.SelectorNombreXPath,
+                        s.SelectorImagenXPath
+                    })
+                    .ToListAsync();
+                return Ok(sites);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener la lista de sitios para la extensión.");
+                return StatusCode(500, $"Error interno: {ex.Message}");
+            }
+        }
+
+        [HttpGet("variants")]
+        public async Task<IActionResult> GetVariants()
+        {
+            // 1. Validar la API Key
+            if (!Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey))
+            {
+                return Unauthorized("API Key no proporcionada.");
+            }
+
+            var configuredApiKey = _configuration["Scraping:ApiKey"] ?? "TeocuitlaDefaultApiKeySecret";
+            if (extractedApiKey != configuredApiKey)
+            {
+                return Unauthorized("API Key inválida.");
+            }
+
+            try
+            {
+                var today = DateTime.Today;
+                var now = DateTime.Now;
+                var variants = await _context.VariantesComerciales
+                    .Include(v => v.CatalogoSitio)
+                    .Where(v => v.UltimaActualizacion == null || 
+                                (v.UltimaActualizacion < today && 
+                                 v.CatalogoSitio != null && 
+                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos)))
+                    .Select(v => new {
+                        v.Id,
+                        v.Nombre,
+                        v.Sku,
+                        v.UrlProducto,
+                        v.PrecioActual,
+                        v.UltimaActualizacion,
+                        SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda"
+                    })
+                    .OrderBy(v => v.UltimaActualizacion)
+                    .Take(50)
+                    .ToListAsync();
+                return Ok(variants);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener la lista de variantes para la extensión.");
+                return StatusCode(500, $"Error interno: {ex.Message}");
             }
         }
     }

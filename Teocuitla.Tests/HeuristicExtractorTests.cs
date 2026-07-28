@@ -139,5 +139,48 @@ namespace Teocuitla.Tests
                 Assert.Contains("/medias/sys_master/products/", result2.ImagenUrl);
             }
         }
+
+        [Fact]
+        public void Extract_WithRealHtmlFiles_FromHtmlFolder()
+        {
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
+
+            Assert.NotEmpty(htmlDir);
+
+            var amazonFile = Path.Combine(htmlDir, "amazon.com.mx_2026-07-28_15-45-18.html");
+            var liverpoolFile = Path.Combine(htmlDir, "liverpool.com.mx_2026-07-28_15-53-15.html");
+
+            Assert.True(File.Exists(amazonFile), "Amazon file does not exist");
+            Assert.True(File.Exists(liverpoolFile), "Liverpool file does not exist");
+
+            var amazonHtml = File.ReadAllText(amazonFile);
+            var amazonResult = HeuristicExtractor.Extract(amazonHtml);
+
+            var liverpoolHtml = File.ReadAllText(liverpoolFile);
+            var liverpoolResult = HeuristicExtractor.Extract(liverpoolHtml);
+
+            // Assert Amazon
+            Assert.Contains("Odyssey G5", amazonResult.Nombre);
+            Assert.Equal(5908.02m, amazonResult.Precio);
+            Assert.Equal("https://m.media-amazon.com/images/I/81Pm4yGtiYL._AC_SX679_.jpg", amazonResult.ImagenUrl);
+            Assert.True(amazonResult.EnStock);
+
+            // Assert Liverpool
+            Assert.Contains("Centro de lavado", liverpoolResult.Nombre);
+            Assert.Equal(29779.40m, liverpoolResult.Precio);
+            Assert.Contains("1158330721", liverpoolResult.ImagenUrl);
+            Assert.True(liverpoolResult.EnStock);
+        }
     }
 }

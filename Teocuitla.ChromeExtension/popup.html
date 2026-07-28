@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Teocuitla Ingestor</title>
+  <style>
+    body {
+      width: 360px;
+      margin: 0;
+      padding: 16px;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #000000;
+      color: #fafafa;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 0 0 12px 0;
+      color: #005dab;
+      border-bottom: 1px solid #222222;
+      padding-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo-badge {
+      font-size: 10px;
+      background-color: #005dab;
+      color: #ffffff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+    
+    /* Tabs System */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #222222;
+      margin-bottom: 14px;
+    }
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      padding: 8px;
+      color: #888888;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: bold;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: #ffffff;
+    }
+    .tab-btn.active {
+      color: #005dab;
+      border-bottom-color: #005dab;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #b0b0b0;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      font-size: 13px;
+      background-color: #121212;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      color: #ffffff;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #005dab;
+    }
+    button.btn-primary {
+      width: 100%;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #ffffff;
+      background-color: #005dab;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background-color 0.2s;
+    }
+    button.btn-primary:hover {
+      background-color: #004580;
+    }
+    button.btn-secondary {
+      width: 100%;
+      padding: 8px;
+      font-size: 13px;
+      color: #fafafa;
+      background-color: #222222;
+      border: 1px solid #333333;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: all 0.2s;
+    }
+    button.btn-secondary:hover {
+      background-color: #333333;
+    }
+
+    /* Pending Variants List */
+    .variant-list {
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid #222222;
+      border-radius: 4px;
+      background-color: #0d0d0d;
+      padding: 4px;
+    }
+    .variant-item {
+      padding: 10px 8px;
+      border-bottom: 1px solid #1a1a1a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background-color 0.2s;
+    }
+    .variant-item:hover {
+      background-color: #161616;
+    }
+    .variant-item:last-child {
+      border-bottom: none;
+    }
+    .variant-info {
+      flex: 1;
+      min-width: 0; /* Permite truncar texto con ellipsis */
+      margin-right: 8px;
+    }
+    .variant-name {
+      font-weight: bold;
+      color: #ffffff;
+      font-size: 12px;
+      margin: 0 0 4px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .variant-meta {
+      font-size: 10px;
+      color: #888888;
+      display: flex;
+      gap: 8px;
+    }
+    .badge-site {
+      background-color: #222222;
+      color: #005dab;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: bold;
+    }
+    .variant-action-btn {
+      background-color: #005dab;
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      transition: background-color 0.2s;
+    }
+    .variant-action-btn:hover {
+      background-color: #004580;
+    }
+    .no-variants {
+      text-align: center;
+      padding: 20px;
+      color: #888888;
+      font-size: 12px;
+    }
+
+    .status-box {
+      margin-top: 14px;
+      padding: 8px;
+      background-color: #121212;
+      border: 1px solid #222222;
+      border-radius: 4px;
+      font-size: 12px;
+      min-height: 36px;
+    }
+    .status-title {
+      font-weight: bold;
+      margin-bottom: 2px;
+      color: #005dab;
+    }
+    .status-msg {
+      color: #888888;
+      word-break: break-all;
+    }
+    .status-success {
+      color: #4caf50;
+    }
+    .status-error {
+      color: #f44336;
+    }
+  </style>
+</head>
+<body>
+  <h2>
+    Teocuitla Ingestor
+    <span class="logo-badge">v1.1</span>
+  </h2>
+
+  <!-- Tabs Navigation -->
+  <div class="tabs">
+    <button id="tabConfig" class="tab-btn active">Configuración</button>
+    <button id="tabPending" class="tab-btn">Pendientes</button>
+  </div>
+
+  <!-- Content: Configuration -->
+  <div id="configContent" class="tab-content active">
+    <div class="form-group">
+      <label for="apiUrl">URL del Servidor</label>
+      <input type="text" id="apiUrl" placeholder="https://localhost:7192" />
+    </div>
+
+    <div class="form-group">
+      <label for="apiKey">API Key (X-Api-Key)</label>
+      <input type="password" id="apiKey" placeholder="Ingresa tu scraping API key" />
+    </div>
+
+    <button id="btnSave" class="btn-primary">Guardar Configuración</button>
+    <button id="btnExtract" class="btn-secondary">Forzar Extracción Manual</button>
+  </div>
+
+  <!-- Content: Pending Products -->
+  <div id="pendingContent" class="tab-content">
+    <label>Últimos productos ordenados por desactualizados:</label>
+    <div id="variantList" class="variant-list">
+      <div class="no-variants">Cargando productos pendientes...</div>
+    </div>
+    <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <button id="btnRefresh" class="btn-secondary" style="flex: 1; margin: 0;">Refrescar</button>
+      <button id="btnOpenAll" class="btn-primary" style="flex: 2; margin: 0; background-color: #005dab; color: white;">Abrir Todos</button>
+    </div>
+  </div>
+
+  <!-- Common Ingest Status Box -->
+  <div class="status-box">
+    <div class="status-title">Estado de Ingesta</div>
+    <div id="statusMsg" class="status-msg">Esperando acción...</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

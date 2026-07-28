@@ -1,0 +1,32 @@
+# Teocuitla Development Rules
+
+Welcome to Teocuitla! Below are the rules and guidelines for coding, modifying, and maintaining the web scraper and catalog tracking system.
+
+## Project Stack
+- **Backend/Shared**: .NET 9, C#, Entity Framework Core
+- **Frontend**: Blazor Server, MudBlazor
+- **Worker**: .NET Background Worker (Price checking & alerts)
+- **Browser Extension**: Chrome Extension (JavaScript/HTML)
+
+---
+
+## Scraper & HTML Ingestion Heuristic Guidelines
+
+When editing scrapers in `Teocuitla.Shared/Helpers/` (`HeuristicExtractor.cs`, `CategoryScraper.cs`, `RepetitivePatternDetector.cs`), adhere to these rules:
+
+### 1. Price Matching & Normalization
+- **Regex Coverage**: Always use a price regex that matches numbers without commas (e.g., `$5000`) fully to prevent digit truncation. The standard regex is `\$\s*(\d+(?:[.,]\d+)*)`.
+- **H1 Parent Check**: Do not search the entire inner text of a header parent node for a price unless that parent text is extremely specific (e.g. `< 150` characters). Modern retail pages (like Amazon) have very large header parents containing warranty info, related products, and ads that trigger false price positives.
+- **Price Classes**: Add common site-specific price elements to the direct class matching array (`priceClasses`), such as `a-price`, `apex-pricetopay-value`, and `text-price-primary`.
+
+### 2. Stock Detection
+- **Avoid Global Text Collisions**: Do not search the entire page text globally for strings like `"no disponible"` or `"agotado"` if a dedicated availability container exists. Target specific availability nodes (e.g. containing `#availability`, `.availability`, `.stock`) to prevent false-out-of-stock detections triggered by other regions of the page.
+
+### 3. List/Category Scraper & Grid Detection
+- **Filter Out Utility Classes**: Sibling patterns and semantic clustering must filter out utility/layout class names (e.g., Tailwind's `flex`, `grid`, paddings/margins `p-`, `m-`, `w-`, `h-`, border and text utilities). Otherwise, generic layout elements will dominate and false-positive match headers/navigation bars.
+- **Support Root Link Cards**: Do not assume the product link `<a>` is always a child/descendant of the product card container. Many modern lists use the `<a>` tag itself as the root node of the card. Use `(self::a or .//a)` in XPath predicates instead of just `.//a`.
+
+### 4. SKU & Brand Normalization
+- **Standardized Formats**: Brand names containing subcategories or sub-brands (e.g. `VIDANAT/VITAMINAS`) must be normalized to their main name (e.g., splitting by `/` and taking the first token: `VIDANAT`).
+- **Clean SKUs**: Always strip common text labels or prefixes (such as `SKU:`, `Ref:`, `Código:`) from parsed SKUs to ensure consistent database lookups and prevent duplicates.
+- **Unified Processing**: Make sure brand and SKU normalization helpers in `DataNormalizer` are utilized in both browser extension API controllers (like `IngestionController`) and background scraper tasks.

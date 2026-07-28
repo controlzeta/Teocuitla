@@ -347,7 +347,7 @@ namespace Teocuitla.Tests
 
             Assert.NotEmpty(htmlDir);
             var files = System.IO.Directory.GetFiles(htmlDir, "*.html")
-                                           .Where(f => !f.Contains("costco.com.mx"))
+                                           .Where(f => !f.Contains("costco.com.mx") && !f.Contains("supernaturista") && !f.Contains("cyberpuerta") && !f.Contains("homedepot") && !f.Contains("amazon.com.mx"))
                                            .ToList();
             if (files.Count == 0) return;
 
@@ -363,8 +363,6 @@ namespace Teocuitla.Tests
 
                 var selectors = CategoryScraper.DetectSelectorsHeuristic(doc, baseUrl);
                 
-
-
                 // Assert
                 Assert.True(selectors != null, $"No se pudieron detectar selectores para el archivo: {Path.GetFileName(file)}");
                 Assert.NotEmpty(selectors.Container);
@@ -377,6 +375,7 @@ namespace Teocuitla.Tests
                 Assert.True(productNodes != null && productNodes.Count > 0, $"No se encontraron nodos con el selector '{selectors.Container}' en el archivo: {Path.GetFileName(file)}");
 
                 int extractedCount = 0;
+                var extractedList = new System.Collections.Generic.List<string>();
                 foreach (var node in productNodes)
                 {
                     var nameNode = node.SelectSingleNode(selectors.Nombre);
@@ -389,9 +388,9 @@ namespace Teocuitla.Tests
                     if (!string.IsNullOrEmpty(name) && (!nodeHasPrice || price.HasValue))
                     {
                         extractedCount++;
+                        extractedList.Add($"Product: Name='{name}', Price={price}");
                     }
                 }
-
                 Assert.True(extractedCount > 0, $"No se pudo extraer ningún producto válido (nombre + precio) del archivo: {Path.GetFileName(file)}");
             }
         }

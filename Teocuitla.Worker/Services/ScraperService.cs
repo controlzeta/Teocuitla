@@ -328,6 +328,7 @@ namespace Teocuitla.Worker.Services
                         {
                             imagenUrl = imgNode.Attributes["src"]?.Value 
                                         ?? imgNode.Attributes["data-src"]?.Value 
+                                        ?? imgNode.Attributes["content"]?.Value 
                                         ?? imgNode.Attributes["href"]?.Value 
                                         ?? imgNode.InnerText.Trim();
                             
@@ -588,6 +589,7 @@ namespace Teocuitla.Worker.Services
                         {
                             imagenUrl = imgElement.GetAttribute("src") 
                                         ?? imgElement.GetAttribute("data-src") 
+                                        ?? imgElement.GetAttribute("content") 
                                         ?? imgElement.GetAttribute("href");
                             
                             if (!string.IsNullOrEmpty(imagenUrl))

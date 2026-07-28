@@ -1,12 +1,14 @@
 @page "/"
 @rendermode InteractiveServer
+@implements IDisposable
 @inject IDbContextFactory<TeocuitlaDbContext> DbFactory
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject NavigationManager Navigation
 
 <PageTitle>Dashboard - Teocuitla</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-6">
+<div class="d-flex justify-space-between align-center mb-6 flex-wrap gap-4">
     <div>
         <div class="d-flex align-center gap-2">
             <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Panel de Control</MudText>
@@ -14,12 +16,35 @@
         </div>
         <MudText Typo="Typo.body2" Class="text-muted">Estado operativo del sistema de monitoreo de precios Teocuitla.</MudText>
     </div>
+    
+    <div class="d-flex align-center gap-4 flex-wrap">
+        <div class="d-flex flex-column align-end">
+            <MudText Typo="Typo.caption" Class="text-muted font-medium">Última actualización</MudText>
+            <MudText Typo="Typo.caption" Class="font-bold" Color="Color.Primary">@_lastUpdatedTime.ToString("HH:mm:ss")</MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined" 
+                   Color="Color.Primary" 
+                   Size="Size.Small" 
+                   StartIcon="@Icons.Material.Filled.Refresh" 
+                   OnClick="LoadDashboardData">
+            Refrescar
+        </MudButton>
+        <MudSwitch T="bool" 
+                   Value="_autoRefreshActive" 
+                   ValueChanged="ToggleAutoRefresh" 
+                   Color="Color.Primary" 
+                   Label="Auto-refrescar (30s)" 
+                   Size="Size.Small" />
+    </div>
 </div>
 
 <!-- CARDS DE ESTADÍSTICAS RÁPIDAS -->
 <MudGrid Class="mb-6">
     <MudItem xs="6" sm="3">
-        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+        <MudPaper Outlined="true" 
+                  Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
+                  Style="background: var(--mud-palette-surface);"
+                  @onclick='@(() => Navigation.NavigateTo("/sitios"))'>
             <MudIcon Icon="@Icons.Material.Filled.SettingsInputComponent" Color="Color.Primary" Size="Size.Medium" Class="mb-2" />
             @if (_totalSitios == null)
             {
@@ -31,11 +56,15 @@
             {
                 <MudText Typo="Typo.h5" Class="font-bold">@_totalSitios</MudText>
             }
-            <MudText Typo="Typo.caption" Class="text-muted">Sitios Activos</MudText>
+            <MudText Typo="Typo.caption" Class="text-muted d-block">Sitios Activos</MudText>
+            <MudText Typo="Typo.caption" Class="text-primary font-bold mt-1 d-block" Style="font-size: 0.65rem;">Configurar sitios →</MudText>
         </MudPaper>
     </MudItem>
     <MudItem xs="6" sm="3">
-        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+        <MudPaper Outlined="true" 
+                  Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
+                  Style="background: var(--mud-palette-surface);"
+                  @onclick='@(() => Navigation.NavigateTo("/catalogo"))'>
             <MudIcon Icon="@Icons.Material.Filled.ShoppingBag" Color="Color.Secondary" Size="Size.Medium" Class="mb-2" />
             @if (_totalProductos == null)
             {
@@ -47,11 +76,15 @@
             {
                 <MudText Typo="Typo.h5" Class="font-bold">@_totalProductos</MudText>
             }
-            <MudText Typo="Typo.caption" Class="text-muted">Productos</MudText>
+            <MudText Typo="Typo.caption" Class="text-muted d-block">Productos</MudText>
+            <MudText Typo="Typo.caption" Class="text-secondary font-bold mt-1 d-block" Style="font-size: 0.65rem;">Ver catálogo →</MudText>
         </MudPaper>
     </MudItem>
     <MudItem xs="6" sm="3">
-        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+        <MudPaper Outlined="true" 
+                  Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
+                  Style="background: var(--mud-palette-surface);"
+                  @onclick='@(() => Navigation.NavigateTo("/catalogo"))'>
             <MudIcon Icon="@Icons.Material.Filled.Link" Color="Color.Info" Size="Size.Medium" Class="mb-2" />
             @if (_totalEnlaces == null)
             {
@@ -63,11 +96,15 @@
             {
                 <MudText Typo="Typo.h5" Class="font-bold">@_totalEnlaces</MudText>
             }
-            <MudText Typo="Typo.caption" Class="text-muted">Enlaces Activos</MudText>
+            <MudText Typo="Typo.caption" Class="text-muted d-block">Enlaces Activos</MudText>
+            <MudText Typo="Typo.caption" Class="text-info font-bold mt-1 d-block" Style="font-size: 0.65rem;">Administrar enlaces →</MudText>
         </MudPaper>
     </MudItem>
     <MudItem xs="6" sm="3">
-        <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default text-center h-100" Style="background: var(--mud-palette-surface);">
+        <MudPaper Outlined="true" 
+                  Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
+                  Style="background: var(--mud-palette-surface);"
+                  @onclick='@(() => Navigation.NavigateTo("/admin/logs"))'>
             <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Success" Size="Size.Medium" Class="mb-2" />
             @if (_totalHistorial == null)
             {
@@ -79,7 +116,8 @@
             {
                 <MudText Typo="Typo.h5" Class="font-bold">@_totalHistorial</MudText>
             }
-            <MudText Typo="Typo.caption" Class="text-muted">Registros Precios</MudText>
+            <MudText Typo="Typo.caption" Class="text-muted d-block">Registros Precios</MudText>
+            <MudText Typo="Typo.caption" Class="text-success font-bold mt-1 d-block" Style="font-size: 0.65rem;">Ver historial logs →</MudText>
         </MudPaper>
     </MudItem>
 </MudGrid>
@@ -113,12 +151,19 @@
                     var diff = (c.PrecioActual ?? 0) - (c.PrecioAnterior ?? 0);
                     var isDrop = diff < 0;
 
-                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                    <MudPaper Outlined="true" 
+                              Class="pa-3 border border-solid mud-border-default dashboard-card-clickable" 
+                              Style="background: var(--mud-palette-surface);"
+                              @onclick='@(() => Navigation.NavigateTo($"/catalogo?search={c.Sku}"))'>
                         <div class="d-flex align-center justify-space-between gap-3">
                             <div class="truncate-container" style="max-width: 65%;">
                                 <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@c.Nombre</MudText>
                                 <MudText Typo="Typo.caption" Class="text-muted">
                                     @(c.CatalogoSitio?.Nombre ?? "Tienda") • SKU: @c.Sku
+                                    @if (c.UltimaActualizacion.HasValue)
+                                    {
+                                        <span> • Hace @CalcularHaceTiempo(c.UltimaActualizacion.Value)</span>
+                                    }
                                 </MudText>
                             </div>
                             <div class="text-right">
@@ -242,7 +287,10 @@
                 @foreach (var v in _intentosRecientes)
                 {
                     var tieneFalla = _fallasDeIntentos.Any(f => f.VarianteComercialId == v.Id && (v.UltimaActualizacion == null || f.FechaFalla >= v.UltimaActualizacion));
-                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                    <MudPaper Outlined="true" 
+                              Class='@($"pa-3 border border-solid mud-border-default {(tieneFalla ? "dashboard-card-clickable-error" : "dashboard-card-clickable")}")' 
+                              Style="background: var(--mud-palette-surface);"
+                              @onclick="@(() => OnIntentoRecienteClick(v, tieneFalla))">
                         <div class="d-flex align-center justify-space-between gap-3">
                             <div class="truncate-container" style="max-width: 60%;">
                                 <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@v.Nombre</MudText>
@@ -349,15 +397,23 @@
             <div class="d-flex flex-column gap-2">
                 @foreach (var f in _fallasRecientes)
                 {
-                    <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default" Style="background: var(--mud-palette-surface); border-left: 4px solid var(--mud-palette-error) !important;">
+                    <MudPaper Outlined="true" 
+                              Class="pa-3 border border-solid mud-border-default dashboard-card-clickable-error" 
+                              Style="background: var(--mud-palette-surface); border-left: 4px solid var(--mud-palette-error) !important;"
+                              @onclick="@(() => DiagnosticarFalla(f.Id))">
                         <div class="d-flex justify-space-between align-start gap-2">
                             <div class="truncate-container" style="max-width: 75%;">
                                 <MudText Typo="Typo.body2" Class="font-bold truncate-text">@(f.VarianteComercial?.Nombre ?? "Variante Eliminada")</MudText>
                                 <MudText Typo="Typo.caption" Class="mud-text-error font-medium d-block truncate-text">@f.ErrorMensaje</MudText>
                             </div>
-                            <MudText Typo="Typo.caption" Class="text-muted whitespace-nowrap">
-                                @f.FechaFalla.ToLocalTime().ToString("dd/MM HH:mm")
-                            </MudText>
+                            <div class="d-flex flex-column align-end whitespace-nowrap">
+                                <MudText Typo="Typo.caption" Class="text-muted font-bold">
+                                    Hace @CalcularHaceTiempo(f.FechaFalla)
+                                </MudText>
+                                <MudText Typo="Typo.caption" Class="text-muted">
+                                    @f.FechaFalla.ToLocalTime().ToString("dd/MM HH:mm")
+                                </MudText>
+                            </div>
                         </div>
                     </MudPaper>
                 }
@@ -386,6 +442,11 @@
     
     private bool _resettingLimites = false;
 
+    // Temporizador de refresco dinámico
+    private System.Threading.Timer? _autoRefreshTimer;
+    private bool _autoRefreshActive = false;
+    private DateTime _lastUpdatedTime = DateTime.Now;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadDashboardData();
@@ -393,6 +454,8 @@
 
     private async Task LoadDashboardData()
     {
+        _lastUpdatedTime = DateTime.Now;
+        
         // Inicializamos los datos en null para indicar que están cargando
         _totalSitios = null;
         _totalProductos = null;
@@ -694,6 +757,91 @@
             (MarkupString)htmlContent,
             yesText: "Entendido");
     }
+
+    private void StartTimer()
+    {
+        _autoRefreshTimer?.Dispose();
+        _autoRefreshTimer = new System.Threading.Timer(async _ =>
+        {
+            if (_autoRefreshActive)
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadDashboardData();
+                    StateHasChanged();
+                });
+            }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private void StopTimer()
+    {
+        _autoRefreshTimer?.Dispose();
+        _autoRefreshTimer = null;
+    }
+
+    private void ToggleAutoRefresh(bool active)
+    {
+        _autoRefreshActive = active;
+        if (_autoRefreshActive)
+        {
+            StartTimer();
+        }
+        else
+        {
+            StopTimer();
+        }
+    }
+
+    public void Dispose()
+    {
+        StopTimer();
+    }
+
+    private string CalcularHaceTiempo(DateTime fechaUtc)
+    {
+        var diff = DateTime.UtcNow - fechaUtc;
+        if (diff.TotalDays >= 1) return $"{(int)diff.TotalDays} d";
+        if (diff.TotalHours >= 1) return $"{(int)diff.TotalHours} h";
+        if (diff.TotalMinutes >= 1) return $"{(int)diff.TotalMinutes} m";
+        return "segundos";
+    }
+
+    private async Task DiagnosticarFalla(int fallaId)
+    {
+        var parameters = new DialogParameters<FallaReviewDialog>
+        {
+            { x => x.FallaId, fallaId }
+        };
+
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FallaReviewDialog>("Revisión y Corrección de Falla", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadDashboardData();
+        }
+    }
+
+    private async Task OnIntentoRecienteClick(VarianteComercial v, bool tieneFalla)
+    {
+        if (tieneFalla)
+        {
+            var latestFalla = _fallasDeIntentos
+                .Where(f => f.VarianteComercialId == v.Id)
+                .OrderByDescending(f => f.FechaFalla)
+                .FirstOrDefault();
+            
+            if (latestFalla != null)
+            {
+                await DiagnosticarFalla(latestFalla.Id);
+                return;
+            }
+        }
+        
+        Navigation.NavigateTo($"/catalogo?search={v.Sku}");
+    }
 }
 
 <style>
@@ -701,5 +849,23 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+    .dashboard-card-clickable {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .dashboard-card-clickable:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+        border-color: var(--mud-palette-primary) !important;
+    }
+    .dashboard-card-clickable-error {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .dashboard-card-clickable-error:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(244, 67, 54, 0.15);
+        border-color: var(--mud-palette-error) !important;
     }
 </style>

@@ -12,6 +12,15 @@ using Teocuitla.Shared.Helpers;
 
 namespace Teocuitla.Shared.Helpers
 {
+    public enum HeuristicStrategy
+    {
+        Auto,
+        StructuralGrouping,
+        ElementDensity,
+        ClassClustering,
+        RepetitivePattern
+    }
+
     public class CategoryProductResult
     {
         public string Nombre { get; set; } = string.Empty;
@@ -61,7 +70,8 @@ namespace Teocuitla.Shared.Helpers
             string? overridePrecio = null,
             string? overrideLink = null,
             string? overrideImagen = null,
-            string? overridePaginador = null)
+            string? overridePaginador = null,
+            HeuristicStrategy? heuristicStrategy = null)
         {
             var resultadoGlobal = new CategoryScrapeResult();
             var urlActual = urlInicial;
@@ -109,7 +119,7 @@ namespace Teocuitla.Shared.Helpers
                     // Si no hay selector de contenedor configurado, ejecutar heurística para auto-detectar
                     if (string.IsNullOrWhiteSpace(containerSelector))
                     {
-                        var heuristicSelectors = DetectSelectorsHeuristic(doc, sitio.UrlBase);
+                        var heuristicSelectors = DetectSelectorsHeuristic(doc, sitio.UrlBase, heuristicStrategy ?? HeuristicStrategy.Auto);
                         if (heuristicSelectors != null)
                         {
                             containerSelector = heuristicSelectors.Container;
@@ -200,8 +210,17 @@ namespace Teocuitla.Shared.Helpers
                             string nombre = string.Empty;
                             if (!string.IsNullOrWhiteSpace(nombreSelector))
                             {
-                                var nombreNode = cardNode.SelectSingleNode(nombreSelector);
-                                nombre = ExtraerNombreLimpio(nombreNode);
+                                var parts = nombreSelector.Split('|');
+                                foreach (var part in parts)
+                                {
+                                    var nombreNode = cardNode.SelectSingleNode(part.Trim());
+                                    var text = ExtraerNombreLimpio(nombreNode);
+                                    if (!string.IsNullOrEmpty(text))
+                                    {
+                                        nombre = text;
+                                        break;
+                                    }
+                                }
                             }
                             if (string.IsNullOrEmpty(nombre))
                             {
@@ -219,11 +238,16 @@ namespace Teocuitla.Shared.Helpers
                             decimal precio = 0;
                             if (!string.IsNullOrWhiteSpace(precioSelector))
                             {
-                                var precioNode = cardNode.SelectSingleNode(precioSelector);
-                                var precioParsed = ExtraerPrecioEstructurado(precioNode) ?? ParsePrice(precioNode?.InnerText);
-                                if (precioParsed.HasValue)
+                                var parts = precioSelector.Split('|');
+                                foreach (var part in parts)
                                 {
-                                    precio = precioParsed.Value;
+                                    var precioNode = cardNode.SelectSingleNode(part.Trim());
+                                    var precioParsed = ExtraerPrecioEstructurado(precioNode) ?? ParsePrice(precioNode?.InnerText);
+                                    if (precioParsed.HasValue && precioParsed.Value > 0)
+                                    {
+                                        precio = precioParsed.Value;
+                                        break;
+                                    }
                                 }
                             }
 
@@ -383,46 +407,7 @@ namespace Teocuitla.Shared.Helpers
 
         public static decimal? ParsePrice(string? input)
         {
-            if (string.IsNullOrWhiteSpace(input)) return null;
-
-            try
-            {
-                // Extraer solo números, comas y puntos
-                var clean = Regex.Replace(input, @"[^\d.,]", "").Trim();
-                if (string.IsNullOrEmpty(clean)) return null;
-
-                if (clean.Contains(",") && clean.Contains("."))
-                {
-                    if (clean.LastIndexOf('.') > clean.LastIndexOf(','))
-                    {
-                        clean = clean.Replace(",", "");
-                    }
-                    else
-                    {
-                        clean = clean.Replace(".", "").Replace(",", ".");
-                    }
-                }
-                else if (clean.Contains(",") && !clean.Contains("."))
-                {
-                    var parts = clean.Split(',');
-                    if (parts.Length == 2 && parts[1].Length == 2)
-                    {
-                        clean = clean.Replace(",", ".");
-                    }
-                    else
-                    {
-                        clean = clean.Replace(",", "");
-                    }
-                }
-
-                if (decimal.TryParse(clean, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var price))
-                {
-                    return price;
-                }
-            }
-            catch { /* ignore */ }
-
-            return null;
+            return DataNormalizer.NormalizePrice(input);
         }
 
         private static string DeducirSkuDeUrl(string url)
@@ -526,7 +511,116 @@ namespace Teocuitla.Shared.Helpers
             public string Paginador { get; set; } = string.Empty;
         }
 
-        public static HeuristicSelectors? DetectSelectorsHeuristic(HtmlDocument doc, string baseUrl)
+        public static HeuristicSelectors? DetectSelectorsHeuristic(HtmlDocument doc, string baseUrl, HeuristicStrategy strategy = HeuristicStrategy.Auto)
+        {
+            if (strategy == HeuristicStrategy.RepetitivePattern)
+            {
+                return RepetitivePatternDetector.DetectSelectors(doc, baseUrl);
+            }
+            else if (strategy == HeuristicStrategy.StructuralGrouping)
+            {
+                return DetectSelectorsStructural(doc, baseUrl);
+            }
+            else if (strategy == HeuristicStrategy.ElementDensity)
+            {
+                return DetectSelectorsDensity(doc, baseUrl);
+            }
+            else if (strategy == HeuristicStrategy.ClassClustering)
+            {
+                return DetectSelectorsSemantic(doc, baseUrl);
+            }
+
+            // Auto (Cascada con Validación - Matriz de Fallbacks Estructurales)
+            var strategies = new List<(string Name, Func<HtmlDocument, string, HeuristicSelectors?> Method)>
+            {
+                ("Repetitive Pattern Detector (Listas/Catálogos)", RepetitivePatternDetector.DetectSelectors),
+                ("Structural Grouping (Anclas DOM)", DetectSelectorsStructural),
+                ("Element Density Grid", DetectSelectorsDensity),
+                ("Class/ID Semantic Clustering", DetectSelectorsSemantic)
+            };
+
+            foreach (var s in strategies)
+            {
+                try
+                {
+                    var selectors = s.Method(doc, baseUrl);
+                    if (selectors != null && ValidarSelectores(doc, selectors))
+                    {
+                        return selectors;
+                    }
+                }
+                catch
+                {
+                    // Ignorar fallos individuales de estrategias
+                }
+            }
+
+            return null;
+        }
+
+        private static bool ValidarSelectores(HtmlDocument doc, HeuristicSelectors selectors)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(selectors.Container) || 
+                    string.IsNullOrEmpty(selectors.Nombre) || 
+                    string.IsNullOrEmpty(selectors.Precio))
+                {
+                    return false;
+                }
+
+                var nodes = doc.DocumentNode.SelectNodes(selectors.Container);
+                if (nodes == null || nodes.Count == 0) return false;
+
+                int validProductsCount = 0;
+                // Probar en una muestra de hasta 5 nodos
+                foreach (var node in nodes.Take(5))
+                {
+                    // Evaluar Nombre con prioridad secuencial si tiene '|'
+                    string nombre = string.Empty;
+                    var nameParts = selectors.Nombre.Split('|');
+                    foreach (var part in nameParts)
+                    {
+                        var nombreNode = node.SelectSingleNode(part.Trim());
+                        var textNode = ExtraerNombreLimpio(nombreNode);
+                        if (!string.IsNullOrEmpty(textNode))
+                        {
+                            nombre = textNode;
+                            break;
+                        }
+                    }
+
+                    // Evaluar Precio con prioridad secuencial si tiene '|'
+                    decimal precio = 0;
+                    var priceParts = selectors.Precio.Split('|');
+                    foreach (var part in priceParts)
+                    {
+                        var precioNode = node.SelectSingleNode(part.Trim());
+                        var precioParsed = ExtraerPrecioEstructurado(precioNode) ?? ParsePrice(precioNode?.InnerText);
+                        if (precioParsed.HasValue && precioParsed.Value > 0)
+                        {
+                            precio = precioParsed.Value;
+                            break;
+                        }
+                    }
+
+                    bool nodeHasPriceSymbol = node.InnerText.Contains("$");
+
+                    if (!string.IsNullOrEmpty(nombre) && (!nodeHasPriceSymbol || precio > 0))
+                    {
+                        validProductsCount++;
+                    }
+                }
+
+                return validProductsCount > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static HeuristicSelectors? DetectSelectorsStructural(HtmlDocument doc, string baseUrl)
         {
             // Heurística avanzada de detección por repetición de estructura DOM (libre de clases fijas)
             try
@@ -539,53 +633,76 @@ namespace Teocuitla.Shared.Helpers
                 {
                     if (node.Name == "#text" || node.Name == "#comment" || EsNodoDeRuido(node)) continue;
 
+                    var descendants = node.Descendants().ToList();
+
                     // Debe tener un enlace (o ser uno mismo)
                     var hasLink = node.Name == "a" || 
                                   node.Attributes.Contains("href") || 
                                   node.Attributes.Contains("data-href") || 
                                   node.Attributes.Contains("data-url") || 
-                                  node.SelectSingleNode(".//*[@href or @data-href or @data-url or @data-permalink or @data-path]") != null;
+                                  descendants.Any(d => d.Attributes.Contains("href") || d.Attributes.Contains("data-href") || d.Attributes.Contains("data-url") || d.Attributes.Contains("data-permalink") || d.Attributes.Contains("data-path"));
 
                     // Debe tener al menos una imagen (o ser una o tener estilo de fondo)
                     var hasImg = node.Name == "img" || 
-                                 node.SelectSingleNode(".//img | .//picture | .//source") != null ||
-                                 (node.GetAttributeValue("style", "").Contains("background-image") || node.SelectSingleNode(".//*[contains(@style, 'background-image')]") != null);
+                                 descendants.Any(d => d.Name == "img" || d.Name == "picture" || d.Name == "source") ||
+                                 (node.GetAttributeValue("style", "").Contains("background-image") || descendants.Any(d => d.GetAttributeValue("style", "").Contains("background-image")));
 
                     // Debe tener algún precio (detectado estructuradamente, con signo de pesos o clases/IDs de precio)
-                    var hasPrice = node.SelectSingleNode(".//*[contains(text(), '$') or contains(text(), 'MXN') or contains(text(), 'USD') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money') or contains(@class, 'fraction') or contains(@class, 'cost') or contains(@class, 'costo')]") != null;
+                    var hasPrice = descendants.Any(d => (d.Name == "#text" && (d.InnerText.Contains("$") || d.InnerText.Contains("MXN") || d.InnerText.Contains("USD"))) || 
+                                                         (d.GetAttributeValue("class", "") is string cls && (cls.Contains("price") || cls.Contains("precio") || cls.Contains("amount") || cls.Contains("money") || cls.Contains("fraction") || cls.Contains("cost") || cls.Contains("costo"))));
 
-                    if (hasLink && hasImg && hasPrice)
+                    // Debe tener algún título o nombre del producto
+                    var hasName = descendants.Any(d => d.Name == "h1" || d.Name == "h2" || d.Name == "h3" || d.Name == "h4" || d.Name == "h5" ||
+                                                       (d.GetAttributeValue("class", "") is string cls && (cls.Contains("name") || cls.Contains("title") || cls.Contains("titulo"))) ||
+                                                       (d.Name == "a" && !string.IsNullOrWhiteSpace(d.InnerText) && !d.Descendants("img").Any()));
+
+                    if (hasLink && hasImg && hasPrice && hasName)
                     {
                         candidates.Add(node);
                     }
                 }
 
-                if (!candidates.Any()) return null;
-
-                // 2. Filtrar para quedarnos únicamente con los candidatos "hoja" (los contenedores más internos)
-                var leafCandidates = new List<HtmlNode>();
-                foreach (var candidate in candidates)
+                // 2. Filtrar candidatos duplicados por anidamiento resolviendo cada cadena a un único contenedor legítimo
+                var finalCandidates = new List<HtmlNode>();
+                foreach (var c1 in candidates)
                 {
-                    bool hasDescendantCandidate = candidate.Descendants().Any(d => candidates.Contains(d));
-                    if (!hasDescendantCandidate)
+                    var ancestors = candidates.Where(c2 => c2 != c1 && c1.Ancestors().Contains(c2)).ToList();
+                    if (!ancestors.Any())
                     {
-                        leafCandidates.Add(candidate);
+                        finalCandidates.Add(c1);
+                    }
+                    else
+                    {
+                        bool ancestorHasHeading = ancestors.Any(a => a.SelectSingleNode(".//h1 | .//h2 | .//h3 | .//h4 | .//h5 | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')]") != null);
+                        bool descendantHasHeading = c1.SelectSingleNode(".//h1 | .//h2 | .//h3 | .//h4 | .//h5 | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')]") != null;
+
+                        if (!ancestorHasHeading || descendantHasHeading)
+                        {
+                            foreach (var a in ancestors)
+                            {
+                                finalCandidates.Remove(a);
+                            }
+                            if (!finalCandidates.Contains(c1))
+                            {
+                                finalCandidates.Add(c1);
+                            }
+                        }
                     }
                 }
 
-                if (!leafCandidates.Any()) return null;
+                if (!finalCandidates.Any()) return null;
 
                 // 3. Agrupar los candidatos usando anclas estables y caminos estructurales relativos
-                var groups = leafCandidates
-                    .Select(n => {
-                        var (anchor, path) = ObtenerAnclaYCamino(n);
-                        return new { Node = n, Key = new StructuralGroupKey { AnchorNode = anchor, RelativePath = path } };
-                    })
-                    .GroupBy(x => x.Key)
-                    .Select(g => new { Key = g.Key, Children = g.Select(x => x.Node).ToList(), Count = g.Count() })
-                    .Where(g => g.Count >= 3) // Al menos 3 repeticiones hermanas para ser considerado un lister
-                    .OrderByDescending(g => g.Count)
-                    .ToList();
+                var groups = finalCandidates
+                     .Select(n => {
+                         var (anchor, path) = ObtenerAnclaYCamino(n);
+                         return new { Node = n, Key = new StructuralGroupKey { AnchorNode = anchor, RelativePath = path } };
+                     })
+                     .GroupBy(x => x.Key)
+                     .Select(g => new { Key = g.Key, Children = g.Select(x => x.Node).ToList(), Count = g.Count() })
+                     .Where(g => g.Count >= 3) // Al menos 3 repeticiones hermanas para ser considerado un lister
+                     .OrderByDescending(g => g.Count)
+                     .ToList();
 
                 if (!groups.Any()) return null;
 
@@ -626,20 +743,197 @@ namespace Teocuitla.Shared.Helpers
                 }
 
                 // Filtro de validación estructural
-                containerSelector += "[.//a and .//img]";
+                containerSelector += "[(self::a or .//a) and .//img]";
 
                 // 5. Deducir selectores relativos robustos y libres de clases fijas
                 var selectors = new HeuristicSelectors
                 {
                     Container = containerSelector,
-                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')][not(self::a) or text()][1] | .//a[text() and @href][1] | .//a[@href][1]",
+                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')][not(self::a) or normalize-space(.)][1] | .//a[normalize-space(.) and @href][1] | .//a[normalize-space(.)][1]",
                     Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'current') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money')][contains(text(), '$') or .//*[contains(text(), '$')]][1] | .//*[contains(text(), '$')][1] | .//*[contains(@class, 'price') or contains(@class, 'precio')][1]",
-                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'link')][1] | .//a[@href][1]",
+                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'link')][normalize-space(.)][1] | .//a[@href and normalize-space(.)][1] | .//a[@href][1]",
                     Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'image') or contains(@class, 'img')][1] | .//img[1] | .//*[contains(@style, 'background-image')][1]",
                     Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente') or contains(@aria-label, 'siguiente') or contains(@title, 'siguiente') or contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
                 };
 
                 return selectors;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static HeuristicSelectors? DetectSelectorsDensity(HtmlDocument doc, string baseUrl)
+        {
+            try
+            {
+                var allNodes = doc.DocumentNode.Descendants().ToList();
+                var candidateContainers = new List<(HtmlNode Node, string ChildTag, int Score)>();
+
+                foreach (var node in allNodes)
+                {
+                    if (node.Name == "#text" || node.Name == "#comment" || EsNodoDeRuido(node)) continue;
+
+                    // Obtener hijos directos que no sean texto/comentarios y agrupar por tag
+                    var directChildren = node.ChildNodes
+                        .Where(c => c.Name != "#text" && c.Name != "#comment" && !EsNodoDeRuido(c))
+                        .ToList();
+
+                    if (directChildren.Count < 3) continue;
+
+                    var groups = directChildren.GroupBy(c => c.Name).ToList();
+                    foreach (var group in groups)
+                    {
+                        var childTag = group.Key;
+                        var children = group.ToList();
+                        if (children.Count < 3) continue;
+
+                        int matchCount = 0;
+                        foreach (var child in children)
+                        {
+                            var hasLink = child.Name == "a" || child.SelectSingleNode(".//*[@href or @data-href or @data-url]") != null;
+                            var hasImg = child.Name == "img" || child.SelectSingleNode(".//img | .//picture | .//source") != null || (child.GetAttributeValue("style", "").Contains("background-image"));
+                            
+                            if (hasLink && hasImg)
+                            {
+                                matchCount++;
+                            }
+                        }
+
+                        // Si al menos el 80% de los hijos tienen enlace e imagen, es un grid candidato
+                        double matchRatio = (double)matchCount / children.Count;
+                        if (matchRatio >= 0.8)
+                        {
+                            int score = children.Count;
+                            // Bonificar si tiene un ID estable
+                            var id = node.GetAttributeValue("id", "").Trim();
+                            if (!string.IsNullOrEmpty(id) && !Regex.IsMatch(id, @"\d{4,}") && !id.Contains("ember") && !id.Contains("ng-"))
+                            {
+                                score += 15;
+                            }
+                            candidateContainers.Add((node, childTag, score));
+                        }
+                    }
+                }
+
+                if (!candidateContainers.Any()) return null;
+
+                var winner = candidateContainers.OrderByDescending(c => c.Score).First();
+                var gridNode = winner.Node;
+                var childTagName = winner.ChildTag;
+
+                // Generar XPath del contenedor
+                string containerSelector;
+                var gridId = gridNode.GetAttributeValue("id", "").Trim();
+                if (!string.IsNullOrEmpty(gridId) && !Regex.IsMatch(gridId, @"\d{4,}") && !gridId.Contains("ember") && !gridId.Contains("ng-"))
+                {
+                    containerSelector = $"//*[@id='{gridId}']/{childTagName}";
+                }
+                else
+                {
+                    var pathElements = new List<string>();
+                    var cur = gridNode;
+                    while (cur != null && cur.Name != "#document" && cur.Name != "html")
+                    {
+                        pathElements.Insert(0, cur.Name);
+                        cur = cur.ParentNode;
+                    }
+                    containerSelector = "//" + string.Join("/", pathElements) + "/" + childTagName;
+                }
+
+                containerSelector += "[(self::a or .//a) and .//img]";
+
+                return new HeuristicSelectors
+                {
+                    Container = containerSelector,
+                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')][not(self::a) or normalize-space(.)][1] | .//a[normalize-space(.) and @href][1] | .//a[normalize-space(.)][1]",
+                    Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'current') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money')][contains(text(), '$') or .//*[contains(text(), '$')]][1] | .//*[contains(text(), '$')][1] | .//*[contains(@class, 'price') or contains(@class, 'precio')][1]",
+                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'link')][normalize-space(.)][1] | .//a[@href and normalize-space(.)][1] | .//a[@href][1]",
+                    Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'image') or contains(@class, 'img')][1] | .//img[1] | .//*[contains(@style, 'background-image')][1]",
+                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente') or contains(@aria-label, 'siguiente') or contains(@title, 'siguiente') or contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static HeuristicSelectors? DetectSelectorsSemantic(HtmlDocument doc, string baseUrl)
+        {
+            try
+            {
+                var allNodes = doc.DocumentNode.Descendants().ToList();
+                var classGroups = new Dictionary<string, List<HtmlNode>>();
+
+                foreach (var node in allNodes)
+                {
+                    if (node.Name == "#text" || node.Name == "#comment" || EsNodoDeRuido(node)) continue;
+
+                    var classAttr = node.GetAttributeValue("class", "").Trim();
+                    if (string.IsNullOrEmpty(classAttr)) continue;
+
+                    var classes = classAttr.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var cls in classes)
+                    {
+                        var cleanClass = cls.Trim();
+                        if (string.IsNullOrEmpty(cleanClass) || cleanClass.Length < 3 || EsClaseDeUtilidadOLayout(cleanClass)) continue;
+
+                        if (!classGroups.ContainsKey(cleanClass))
+                        {
+                            classGroups[cleanClass] = new List<HtmlNode>();
+                        }
+                        classGroups[cleanClass].Add(node);
+                    }
+                }
+
+                var candidates = new List<(string ClassName, int Score)>();
+                var keywords = new[] { "product", "producto", "item", "card", "tarjeta", "lister", "tile", "entry", "article", "result" };
+
+                foreach (var kvp in classGroups)
+                {
+                    var className = kvp.Key;
+                    var nodes = kvp.Value;
+                    if (nodes.Count < 3) continue;
+
+                    int validCount = 0;
+                    foreach (var node in nodes)
+                    {
+                        var hasLink = node.Name == "a" || node.SelectSingleNode(".//*[@href or @data-href or @data-url]") != null;
+                        var hasImg = node.Name == "img" || node.SelectSingleNode(".//img | .//picture | .//source") != null || (node.GetAttributeValue("style", "").Contains("background-image"));
+                        if (hasLink && hasImg)
+                        {
+                            validCount++;
+                        }
+                    }
+
+                    if (validCount >= 3)
+                    {
+                        int score = validCount;
+                        // Bonificar si tiene palabras clave semánticas
+                        if (keywords.Any(kw => className.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            score += 20;
+                        }
+                        candidates.Add((className, score));
+                    }
+                }
+
+                if (!candidates.Any()) return null;
+
+                var winner = candidates.OrderByDescending(c => c.Score).First().ClassName;
+                string containerSelector = $"//*[contains(@class, '{winner}')][(self::a or .//a) and .//img]";
+
+                return new HeuristicSelectors
+                {
+                    Container = containerSelector,
+                    Nombre = ".//h3[1] | .//h2[1] | .//h4[1] | .//h5[1] | .//*[contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'titulo')][not(self::a) or normalize-space(.)][1] | .//a[normalize-space(.) and @href][1] | .//a[normalize-space(.)][1]",
+                    Precio = ".//*[contains(@class, 'discount') or contains(@class, 'promo') or contains(@class, 'sale') or contains(@class, 'special') or contains(@class, 'current') or contains(@class, 'price') or contains(@class, 'precio') or contains(@class, 'amount') or contains(@class, 'money')][contains(text(), '$') or .//*[contains(text(), '$')]][1] | .//*[contains(text(), '$')][1] | .//*[contains(@class, 'price') or contains(@class, 'precio')][1]",
+                    Link = ".//a[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'name') or contains(@class, 'title') or contains(@class, 'link')][normalize-space(.)][1] | .//a[@href and normalize-space(.)][1] | .//a[@href][1]",
+                    Imagen = ".//img[contains(@class, 'product') or contains(@class, 'item') or contains(@class, 'main') or contains(@class, 'primary') or contains(@class, 'image') or contains(@class, 'img')][1] | .//img[1] | .//*[contains(@style, 'background-image')][1]",
+                    Paginador = "//a[@rel='next'][1] | //a[contains(@class, 'next') or contains(@class, 'siguiente') or contains(@aria-label, 'siguiente') or contains(@title, 'siguiente') or contains(text(), 'Siguiente') or contains(text(), 'Next')][1]"
+                };
             }
             catch
             {
@@ -672,7 +966,7 @@ namespace Teocuitla.Shared.Helpers
             var xpath = "//" + string.Join("/", pathElements);
             
             // Filtro de validación estructural para asegurar que los nodos seleccionados sean cards válidas
-            xpath += "[.//a and .//img]";
+            xpath += "[(self::a or .//a) and .//img]";
             return xpath;
         }
 
@@ -702,6 +996,27 @@ namespace Teocuitla.Shared.Helpers
             return false;
         }
 
+        private static bool EsClaseDeUtilidadOLayout(string c)
+        {
+            if (string.IsNullOrEmpty(c)) return true;
+            return c.StartsWith("ng-") || 
+                   c.StartsWith("mat-") || 
+                   c.StartsWith("mdc-") ||
+                   c.StartsWith("col-") || 
+                   c.StartsWith("row-") || 
+                   c.StartsWith("flex-") || 
+                   c.StartsWith("grid-") ||
+                   c == "row" || 
+                   c == "flex" || 
+                   c == "grid" || 
+                   c == "container" || 
+                   c == "ng-star-inserted" ||
+                   c.Contains("bootstrap") ||
+                   Regex.IsMatch(c, @"^[pmgtbxy]-[0-9]+$") ||
+                   Regex.IsMatch(c, @"^(w|h|col|row|order|flex|grid|justify|align|self|items|content|text|bg|border|rounded|shadow|opacity|z|transition|duration|delay|ease|overflow|cursor|pointer-events|select|resize|border-style|border-width|border-color|divide|ring|outline)-") ||
+                   Regex.IsMatch(c, @"^(sm|md|lg|xl|2xl|focus|hover|active|disabled|visited|dark|motion-reduce|motion-safe|first|last|odd|even):");
+        }
+
         private static string ObtenerMejorClaseParaFirma(string classAttr)
         {
             if (string.IsNullOrWhiteSpace(classAttr)) return string.Empty;
@@ -714,24 +1029,7 @@ namespace Teocuitla.Shared.Helpers
             if (!classes.Any()) return string.Empty;
 
             // 1. Filtrar clases de sistema, layout, frameworks y utilidades
-            var clasesFiltradas = classes.Where(c => 
-                !c.StartsWith("ng-") && 
-                !c.StartsWith("mat-") && 
-                !c.StartsWith("mdc-") &&
-                !c.StartsWith("col-") &&
-                !c.StartsWith("row-") &&
-                !c.StartsWith("flex-") &&
-                !c.StartsWith("grid-") &&
-                !c.Equals("row") &&
-                !c.Equals("flex") &&
-                !c.Equals("grid") &&
-                !c.Equals("container") &&
-                !c.Equals("ng-star-inserted") &&
-                !c.Contains("bootstrap") &&
-                !Regex.IsMatch(c, @"^[pmgtbxy]-[0-9]+$") && // e.g., p-4, m-2, g-3
-                !Regex.IsMatch(c, @"^(w|h|col|row|order|flex|grid|justify|align|self|items|content|text|bg|border|rounded|shadow|opacity|z|transition|duration|delay|ease|overflow|cursor|pointer-events|select|resize|border-style|border-width|border-color|divide|ring|outline)-") && // utilidades tailwind
-                !Regex.IsMatch(c, @"^(sm|md|lg|xl|2xl|focus|hover|active|disabled|visited|dark|motion-reduce|motion-safe|first|last|odd|even):") // modificadores tailwind
-            ).ToList();
+            var clasesFiltradas = classes.Where(c => !EsClaseDeUtilidadOLayout(c)).ToList();
 
             if (!clasesFiltradas.Any())
             {
@@ -770,79 +1068,7 @@ namespace Teocuitla.Shared.Helpers
 
         public static decimal? ExtraerPrecioEstructurado(HtmlNode priceNode)
         {
-            if (priceNode == null) return null;
-
-            // Excluir elementos tachados (precios anteriores/lista)
-            var cleanPriceNode = priceNode.CloneNode(true);
-            var struckNodes = cleanPriceNode.SelectNodes(".//*[contains(@style, 'line-through') or name()='del' or name()='s' or contains(@class, 'old') or contains(@class, 'original') or contains(@class, 'list-price')]");
-            if (struckNodes != null)
-            {
-                foreach (var sNode in struckNodes)
-                {
-                    try { sNode.Remove(); } catch { }
-                }
-            }
-
-            // Excluir elementos de ruido promocional (porcentaje de descuento, insignias de envío, etc.) que puedan interferir con los dígitos del precio
-            var promoNoiseNodes = cleanPriceNode.SelectNodes(".//*[contains(@class, 'promo') or contains(@class, 'discount') or contains(@class, 'badge') or contains(@class, 'tag') or contains(@class, 'offer') or contains(@class, 'sale') or contains(@class, 'shipping') or contains(@class, 'envio') or contains(@class, 'ahorro') or contains(@class, 'flag') or contains(text(), '%') or contains(text(), 'OFF')]");
-            if (promoNoiseNodes != null)
-            {
-                foreach (var pNode in promoNoiseNodes)
-                {
-                    try { pNode.Remove(); } catch { }
-                }
-            }
-
-            // 1. Intentar buscar por clases explícitas
-            var wholeNode = cleanPriceNode.SelectSingleNode(".//*[contains(@class, 'fraction') or contains(@class, 'whole') or contains(@class, 'integer') or contains(@class, 'price-whole') or contains(@class, 'main-price') or contains(@class, 'amount') or contains(@class, 'price-amount')]");
-            var centsNode = cleanPriceNode.SelectSingleNode(".//*[contains(@class, 'cents') or contains(@class, 'decimal') or contains(@class, 'fraction-cents') or contains(@class, 'price-cents') or contains(@class, 'centavos')]");
-
-            // Fallback: Si no se encuentran por clases explícitas, buscar todos los elementos hoja con números
-            if (wholeNode == null || centsNode == null)
-            {
-                var leafDigitNodes = cleanPriceNode.Descendants()
-                    .Where(n => !n.HasChildNodes && Regex.IsMatch(n.InnerText, @"\d+"))
-                    .ToList();
-
-                if (leafDigitNodes.Count >= 2)
-                {
-                    var firstText = leafDigitNodes[0].InnerText.Trim();
-                    var secondText = leafDigitNodes[1].InnerText.Trim();
-                    
-                    var firstDigits = Regex.Replace(firstText, @"\D", "");
-                    var secondDigits = Regex.Replace(secondText, @"\D", "");
-
-                    if (!string.IsNullOrEmpty(firstDigits) && !string.IsNullOrEmpty(secondDigits) && secondDigits.Length <= 2)
-                    {
-                        wholeNode = leafDigitNodes[0];
-                        centsNode = leafDigitNodes[1];
-                    }
-                }
-            }
-
-            // Si el nodo de centavos es exactamente el mismo que el entero, descartarlo
-            if (wholeNode != null && centsNode != null && wholeNode.XPath == centsNode.XPath)
-            {
-                centsNode = null;
-            }
-
-            if (wholeNode != null)
-            {
-                var wholeText = wholeNode.InnerText.Trim();
-                var centsText = centsNode != null ? centsNode.InnerText.Trim() : "00";
-                
-                wholeText = Regex.Replace(wholeText, @"[^\d.,]", "");
-                centsText = Regex.Replace(centsText, @"\D", "");
-                
-                if (centsText.Length == 1) centsText += "0";
-                if (centsText.Length > 2) centsText = centsText.Substring(0, 2);
-                if (string.IsNullOrEmpty(centsText)) centsText = "00";
-
-                var combined = $"{wholeText}.{centsText}";
-                return ParsePrice(combined);
-            }
-
-            return null;
+            return DataNormalizer.NormalizePriceNode(priceNode);
         }
 
         public static string? ExtraerMejorImagen(HtmlNode imgNode)
@@ -963,75 +1189,12 @@ namespace Teocuitla.Shared.Helpers
 
         public static string ExtraerNombreLimpio(HtmlNode nombreNode)
         {
-            if (nombreNode == null) return string.Empty;
-
-            // Clonar el nodo para no alterar el DOM original del documento
-            var clone = nombreNode.CloneNode(true);
-            
-            // Buscar y remover elementos de ruido internos (como etiquetas de descuento, insignias, "Envío Gratis", etc.)
-            var ruidoNodes = clone.SelectNodes(".//*[contains(@class, 'promo') or contains(@class, 'discount') or contains(@class, 'badge') or contains(@class, 'tag') or contains(@class, 'offer') or contains(@class, 'sale') or contains(@class, 'shipping') or contains(@class, 'envio') or contains(@class, 'ahorro') or contains(@class, 'flag') or contains(text(), '%') or contains(text(), 'OFF')]");
-            if (ruidoNodes != null)
-            {
-                foreach (var rNode in ruidoNodes)
-                {
-                    try
-                    {
-                        rNode.Remove();
-                    }
-                    catch { /* ignore */ }
-                }
-            }
-
-            var text = HtmlEntity.DeEntitize(clone.InnerText).Trim();
-            // Normalizar espacios en blanco múltiples
-            text = Regex.Replace(text, @"\s+", " ").Trim();
-            
-            // Remover ruido de texto plano común de promociones y envíos
-            var cleanText = text;
-            var patterns = new[]
-            {
-                @"\b\d+\s*%\s*OFF\b",
-                @"\b(?:envío|envio)\s+gratis\b",
-                @"\bfree\s+shipping\b",
-                @"\b\d+\s*(?:msi|meses\s+sin\s+intereses)\b",
-                @"\bllega\s+mañana\b",
-                @"\b(?:oferta|descuento|ahorro|promoción|promocion)\b"
-            };
-
-            foreach (var pattern in patterns)
-            {
-                cleanText = Regex.Replace(cleanText, pattern, "", RegexOptions.IgnoreCase).Trim();
-            }
-            
-            // Limpiar guiones o barras huérfanas al final del texto debido a la limpieza
-            cleanText = Regex.Replace(cleanText, @"\s*[-|•/]\s*$", "").Trim();
-            // Normalizar múltiples espacios nuevamente
-            cleanText = Regex.Replace(cleanText, @"\s+", " ").Trim();
-            
-            return cleanText;
+            return DataNormalizer.NormalizeNameNode(nombreNode);
         }
 
         private static string MakeAbsoluteUrl(string url, string baseUrl)
         {
-            if (string.IsNullOrWhiteSpace(url)) return url;
-            url = url.Trim();
-            if (url.StartsWith("//"))
-            {
-                return "https:" + url;
-            }
-            if (url.StartsWith("/"))
-            {
-                try
-                {
-                    var uri = new Uri(baseUrl);
-                    return $"{uri.Scheme}://{uri.Host}{url}";
-                }
-                catch
-                {
-                    return url;
-                }
-            }
-            return url;
+            return DataNormalizer.MakeAbsoluteUrl(url, baseUrl);
         }
 
         public static bool EsEnlaceValido(string? url)

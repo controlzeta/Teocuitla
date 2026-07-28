@@ -4,8 +4,60 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject IJSRuntime JS
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
 
 <PageTitle>Catálogo de Productos - Teocuitla</PageTitle>
+
+<!-- WIDGET: OPORTUNIDADES DE DESCUENTO -->
+@if (_descuentos.Count > 0)
+{
+    <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default mb-6" Style="background: linear-gradient(135deg, rgba(0, 93, 171, 0.05) 0%, rgba(212, 175, 55, 0.05) 100%);">
+        <div class="d-flex align-center gap-2 mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.LocalFireDepartment" Color="Color.Warning" />
+            <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">🔥 Oportunidades de Descuento</MudText>
+            <MudText Typo="Typo.caption" Class="text-muted d-none d-sm-inline">Artículos de tu catálogo con mayor bajada de precio.</MudText>
+        </div>
+        <MudGrid Spacing="2">
+            @foreach (var item in _descuentos)
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Outlined="true" Class="border border-solid mud-border-default h-100 hover-card" Style="background: var(--mud-palette-surface); cursor: pointer;" @onclick="() => OnProductoSelected(item.Producto)">
+                        <MudCardContent Class="pa-3">
+                            <div class="d-flex align-center gap-3">
+                                @if (!string.IsNullOrEmpty(item.ImagenUrl))
+                                {
+                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
+                                        <img src="@item.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: var(--mud-palette-background-grey); flex-shrink: 0;">
+                                        <MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Size="Size.Small" />
+                                    </div>
+                                }
+                                <div style="min-width: 0; flex-grow: 1; text-align: left;">
+                                    <div class="d-flex align-center justify-space-between mb-1">
+                                        <span class="badge-site" style="font-size: 9px; padding: 1px 4px; background: var(--mud-palette-background-grey); border-radius: 3px;">@item.SitioNombre</span>
+                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 10px;">
+                                            -@($"{item.DescuentoPorcentaje:F0}%")
+                                        </span>
+                                    </div>
+                                    <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text" Style="max-width: 100%;">@item.Nombre</MudText>
+                                    
+                                    <div class="d-flex align-center gap-2 mt-1">
+                                        <span style="text-decoration: line-through; color: #888888; font-size: 11px;">$@($"{item.PrecioAnterior:F2}")</span>
+                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 13px;">$@($"{item.PrecioActual:F2}")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    </MudPaper>
+}
 
 <MudGrid>
     <!-- LISTA DE PRODUCTOS: Se oculta en móviles si hay un producto seleccionado para optimizar espacio (Mobile-First) -->
@@ -23,16 +75,35 @@
             </MudButton>
         </div>
 
-        <!-- Buscador -->
-        <MudTextField Value="_searchQuery" 
-                      Placeholder="Buscar producto..." 
-                      Adornment="Adornment.Start" 
-                      AdornmentIcon="@Icons.Material.Filled.Search" 
-                      Class="mb-4"
-                      Immediate="true"
-                      ValueChanged="@(async (string s) => await OnSearchChanged(s))"
-                      Variant="Variant.Outlined" 
-                      Margin="Margin.Dense" />
+        <!-- Buscador y Filtros -->
+        <MudGrid Class="mb-3" Spacing="2">
+            <MudItem xs="12">
+                <MudTextField Value="_searchQuery" 
+                              Placeholder="Buscar producto o marca..." 
+                              Adornment="Adornment.Start" 
+                              AdornmentIcon="@Icons.Material.Filled.Search" 
+                              Immediate="true"
+                              ValueChanged="@(async (string s) => await OnSearchChanged(s))"
+                              Variant="Variant.Outlined" 
+                              Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudSelect T="int?" Value="_selectedSitioId" ValueChanged="OnSitioFilterChanged" Label="Tienda" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
+                    @foreach (var s in _sitios)
+                    {
+                        <MudSelectItem Value="@((int?)s.Id)">@s.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6">
+                <MudSelect T="string" Value="_selectedCategoria" ValueChanged="OnCategoriaFilterChanged" Label="Categoría" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
+                    @foreach (var cat in _categorias)
+                    {
+                        <MudSelectItem Value="@cat">@cat</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
 
         @if (_loadingProductos)
         {
@@ -51,16 +122,41 @@
             <MudList T="ProductoMaestro" SelectedValue="_selectedProducto" SelectedValueChanged="OnProductoSelected" Color="Color.Primary" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface); padding: 0;">
                 @foreach (var prod in _productos)
                 {
-                    <MudListItem Value="prod" Class="border-b border-solid mud-border-default py-3">
+                    var firstImgUrl = prod.Variantes.FirstOrDefault(v => !string.IsNullOrEmpty(v.ImagenUrl))?.ImagenUrl;
+                    <MudListItem Value="prod" Class="border-b border-solid mud-border-default py-2">
                         <div class="d-flex align-center justify-space-between w-100">
-                            <div>
-                                <MudText Typo="Typo.subtitle1" Class="font-bold">@prod.Nombre</MudText>
-                                <div class="d-flex align-center gap-2">
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">@prod.Marca</MudChip>
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">@prod.Categoria</MudChip>
+                            <div class="d-flex align-center gap-3" style="min-width: 0;">
+                                @if (!string.IsNullOrEmpty(firstImgUrl))
+                                {
+                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 44px; height: 44px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
+                                        <img src="@firstImgUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 44px; height: 44px; background: var(--mud-palette-background-grey); flex-shrink: 0;">
+                                        <MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Size="Size.Small" />
+                                    </div>
+                                }
+                                <div style="min-width: 0; text-align: left;">
+                                    <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text" Style="max-width: 180px;">@prod.Nombre</MudText>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudText Typo="Typo.caption" Class="text-muted">@prod.Marca</MudText>
+                                        <span class="text-muted" style="font-size: 8px;">•</span>
+                                        <MudText Typo="Typo.caption" Class="text-primary truncate-text" Style="max-width: 100px;">@prod.Categoria</MudText>
+                                    </div>
                                 </div>
                             </div>
-                            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Default" />
+                            <div class="d-flex align-center gap-1">
+                                <span @onclick:stopPropagation="true">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                                                   Color="Color.Error" 
+                                                   Size="Size.Small" 
+                                                   Title="Eliminar Producto"
+                                                   OnClick="@(() => DeleteProducto(prod))" />
+                                </span>
+                                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Default" Size="Size.Small" />
+                            </div>
                         </div>
                     </MudListItem>
                 }
@@ -115,8 +211,9 @@
                                 <MudCard Outlined="true" Class="border border-solid mud-border-default h-100" Style="background: var(--mud-palette-surface);">
                                     <MudCardHeader Class="py-2 px-3">
                                         <CardHeaderContent>
-                                            <MudText Typo="Typo.subtitle2" Class="font-bold">@(v.CatalogoSitio?.Nombre ?? "Tienda")</MudText>
-                                            <MudText Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 180px;">SKU: @v.Sku</MudText>
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold text-primary">@(v.CatalogoSitio?.Nombre ?? "Tienda")</MudText>
+                                            <MudText Typo="Typo.body2" Class="font-medium truncate-text d-block my-1" Style="max-width: 220px;" title="@v.Nombre">@v.Nombre</MudText>
+                                            <MudText Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 220px;">SKU: @v.Sku</MudText>
                                         </CardHeaderContent>
                                         <CardHeaderActions>
                                             @if (!v.Activo)
@@ -141,8 +238,20 @@
                                         <div class="d-flex gap-3 align-center">
                                             @if (!string.IsNullOrWhiteSpace(v.ImagenUrl))
                                             {
-                                                <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 70px; height: 70px; background: white; padding: 4px; overflow: hidden; flex-shrink: 0;">
+                                                <div class="d-flex align-center justify-center rounded border border-solid mud-border-default cursor-pointer" 
+                                                     style="width: 70px; height: 70px; background: white; padding: 4px; overflow: hidden; flex-shrink: 0;"
+                                                     @onclick="@(() => OpenImageUploadDialog(v))"
+                                                     title="Ver/Cambiar imagen">
                                                     <img src="@v.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen de producto" />
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="d-flex align-center justify-center rounded border border-dashed mud-border-default cursor-pointer" 
+                                                     style="width: 70px; height: 70px; background: var(--mud-palette-background-grey); flex-shrink: 0;"
+                                                     @onclick="@(() => OpenImageUploadDialog(v))"
+                                                     title="Cargar imagen manualmente">
+                                                    <MudIcon Icon="@Icons.Material.Filled.AddAPhoto" Color="Color.Primary" Size="Size.Medium" />
                                                 </div>
                                             }
                                             <div class="flex-grow-1">
@@ -280,11 +389,93 @@
     </DialogActions>
 </MudDialog>
 
+<!-- DIALOG PARA CARGAR / VER IMAGEN DE VARIANTE -->
+<MudDialog @bind-Visible="_imageUploadOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="font-bold">Visor e Ingesta de Imagen</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-column gap-4 align-center justify-center">
+            @if (_editingVariante != null)
+            {
+                <MudText Typo="Typo.subtitle2" Class="text-center font-bold">
+                    @(string.IsNullOrEmpty(_editingVariante.Nombre) ? $"SKU {_editingVariante.Sku}" : _editingVariante.Nombre)
+                </MudText>
+                <MudText Typo="Typo.caption" Class="text-muted text-center" Style="margin-top: -8px;">
+                    Portal: @(_editingVariante.CatalogoSitio?.Nombre ?? "Desconocido")
+                </MudText>
+
+                <!-- Vista previa de imagen actual -->
+                @if (!string.IsNullOrEmpty(_editingVariante.ImagenUrl))
+                {
+                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default pa-2" 
+                         style="width: 150px; height: 150px; background: white; overflow: hidden;">
+                        <img src="@_editingVariante.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Vista previa" />
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column align-center justify-center rounded border border-dashed mud-border-default" 
+                         style="width: 150px; height: 150px; background: var(--mud-palette-background-grey);">
+                        <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Large" Color="Color.Default" />
+                        <MudText Typo="Typo.caption" Class="text-muted mt-2">Sin imagen asignada</MudText>
+                    </div>
+                }
+
+                <div class="w-100 mt-2">
+                    <MudTabs Elevation="0" Rounded="true" Outlined="true" Centered="true">
+                        <MudTabPanel Text="URL de Imagen">
+                            <div class="d-flex flex-column gap-3 pa-4">
+                                <MudTextField @bind-Value="_newImageUrl" 
+                                              Label="Pegar URL de la Imagen" 
+                                              Placeholder="https://ejemplo.com/imagen.jpg" 
+                                              Variant="Variant.Outlined" 
+                                              Adornment="Adornment.End" 
+                                              AdornmentIcon="@Icons.Material.Filled.Link" />
+                            </div>
+                        </MudTabPanel>
+                        <MudTabPanel Text="Subir Archivo">
+                            <div class="d-flex flex-column align-center gap-3 pa-4">
+                                <InputFile OnChange="UploadFile" accept=".jpg,.jpeg,.png,.webp" style="display: none;" id="fileInput" />
+                                <MudButton HtmlTag="label"
+                                           Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.CloudUpload"
+                                           for="fileInput">
+                                    Seleccionar Imagen
+                                </MudButton>
+                                @if (_uploadedFile != null)
+                                {
+                                    <MudText Typo="Typo.caption" Class="text-success font-bold">
+                                        📄 @_uploadedFile.Name (@((_uploadedFile.Size / 1024.0).ToString("F1")) KB)
+                                    </MudText>
+                                }
+                            </div>
+                        </MudTabPanel>
+                    </MudTabs>
+                </div>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseImageUploadDialog">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveImageUpload" Disabled="@(string.IsNullOrEmpty(_newImageUrl) && _uploadedFile == null)">Guardar Imagen</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "search")]
+    public string? UrlSearch { get; set; }
+
     private List<ProductoMaestro> _productos = new();
     private List<CatalogoSitio> _sitios = new();
+    private List<string> _categorias = new();
+    private List<DescuentoItem> _descuentos = new();
     private bool _loadingProductos = true;
     private string _searchQuery = string.Empty;
+    private int? _selectedSitioId;
+    private string? _selectedCategoria;
     
     private ProductoMaestro? _selectedProducto;
     private List<VarianteComercial> _variantes = new();
@@ -307,12 +498,43 @@
     private MudForm _varianteForm = null!;
     private bool _varianteFormIsValid;
 
+    private bool _imageUploadOpen = false;
+    private VarianteComercial? _editingVariante;
+    private string _newImageUrl = "";
+    private IBrowserFile? _uploadedFile;
+
     private readonly DialogOptions _dialogOptions = new() { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadProductos();
         await LoadSitios();
+        await LoadCategorias();
+        await LoadDescuentos();
+        if (!string.IsNullOrEmpty(UrlSearch))
+        {
+            _searchQuery = UrlSearch;
+        }
+        await LoadProductos();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (UrlSearch != null && UrlSearch != _searchQuery)
+        {
+            _searchQuery = UrlSearch;
+            await LoadProductos();
+        }
+    }
+
+    private async Task LoadCategorias()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        _categorias = await context.ProductosMaestros
+            .Select(p => p.Categoria)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync();
     }
 
     private async Task LoadProductos()
@@ -320,10 +542,21 @@
         _loadingProductos = true;
         using var context = await DbFactory.CreateDbContextAsync();
         
-        IQueryable<ProductoMaestro> query = context.ProductosMaestros;
+        IQueryable<ProductoMaestro> query = context.ProductosMaestros.Include(p => p.Variantes);
+        
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
-            query = query.Where(p => p.Nombre.Contains(_searchQuery) || p.Marca.Contains(_searchQuery));
+            query = query.Where(p => p.Nombre.Contains(_searchQuery) || p.Marca.Contains(_searchQuery) || p.Categoria.Contains(_searchQuery));
+        }
+
+        if (_selectedSitioId.HasValue && _selectedSitioId > 0)
+        {
+            query = query.Where(p => p.Variantes.Any(v => v.CatalogoSitioId == _selectedSitioId.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedCategoria))
+        {
+            query = query.Where(p => p.Categoria == _selectedCategoria);
         }
 
         _productos = await query.OrderBy(p => p.Nombre).ToListAsync();
@@ -339,6 +572,18 @@
     private async Task OnSearchChanged(string query)
     {
         _searchQuery = query;
+        await LoadProductos();
+    }
+
+    private async Task OnSitioFilterChanged(int? sitioId)
+    {
+        _selectedSitioId = sitioId;
+        await LoadProductos();
+    }
+
+    private async Task OnCategoriaFilterChanged(string categoria)
+    {
+        _selectedCategoria = categoria;
         await LoadProductos();
     }
 
@@ -409,13 +654,13 @@
                     Data = new double[] { (double)v.PrecioActual!.Value }
                 });
             }
-            _chartLabels = new string[] { DateTime.Today.ToString("dd/MM") };
+            _chartLabels = new string[] { DateTime.Today.ToString("dd/MM/yyyy") };
             return;
         }
 
         // Obtener un conjunto único de fechas para las etiquetas del eje X (últimos 7 días o capturas)
         var fechasUnicas = historial
-            .Select(h => h.FechaCaptura.ToString("dd/MM HH:mm"))
+            .Select(h => h.FechaCaptura.ToString("dd/MM/yyyy"))
             .Distinct()
             .TakeLast(7)
             .ToArray();
@@ -443,7 +688,7 @@
             foreach (var label in fechasUnicas)
             {
                 // Buscar el precio más cercano a esa fecha
-                var punto = historialVariante.FirstOrDefault(h => h.FechaCaptura.ToString("dd/MM HH:mm") == label);
+                var punto = historialVariante.FirstOrDefault(h => h.FechaCaptura.ToString("dd/MM/yyyy") == label);
                 if (punto != null)
                 {
                     dataPoints.Add((double)punto.Precio);
@@ -489,24 +734,129 @@
         await LoadProductos();
     }
 
-    private async Task DeleteSelectedProducto()
+    private async Task DeleteProducto(ProductoMaestro prod)
     {
-        if (_selectedProducto == null) return;
+        if (prod == null) return;
 
         bool confirm = await JS.InvokeAsync<bool>("confirm", 
-            $"¿Está seguro de eliminar '{_selectedProducto.Nombre}' y todos sus enlaces asociados?");
+            $"¿Está seguro de eliminar '{prod.Nombre}' y todos sus enlaces asociados?");
 
         if (confirm)
         {
             using var context = await DbFactory.CreateDbContextAsync();
-            context.ProductosMaestros.Remove(_selectedProducto);
-            await context.SaveChangesAsync();
+            
+            if (_selectedProducto?.Id == prod.Id)
+            {
+                _selectedProducto = null;
+                _showDetails = false;
+            }
+
+            var dbProd = await context.ProductosMaestros.FindAsync(prod.Id);
+            if (dbProd != null)
+            {
+                context.ProductosMaestros.Remove(dbProd);
+                await context.SaveChangesAsync();
+            }
 
             Snackbar.Add("Producto eliminado.", Severity.Success);
-            _selectedProducto = null;
-            _showDetails = false;
             await LoadProductos();
         }
+    }
+
+    private async Task DeleteSelectedProducto()
+    {
+        if (_selectedProducto == null) return;
+        await DeleteProducto(_selectedProducto);
+    }
+
+    private void OpenImageUploadDialog(VarianteComercial v)
+    {
+        _editingVariante = v;
+        _newImageUrl = v.ImagenUrl ?? "";
+        _uploadedFile = null;
+        _imageUploadOpen = true;
+    }
+
+    private void CloseImageUploadDialog()
+    {
+        _imageUploadOpen = false;
+        _editingVariante = null;
+        _newImageUrl = "";
+        _uploadedFile = null;
+    }
+
+    private void UploadFile(InputFileChangeEventArgs e)
+    {
+        _uploadedFile = e.File;
+        _newImageUrl = ""; // Limpiar URL para priorizar archivo subido
+    }
+
+    private async Task SaveImageUpload()
+    {
+        if (_editingVariante == null) return;
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        var dbVariante = await context.VariantesComerciales.FindAsync(_editingVariante.Id);
+        if (dbVariante == null)
+        {
+            Snackbar.Add("No se encontró la variante en la base de datos.", Severity.Error);
+            return;
+        }
+
+        string finalImageUrl = _newImageUrl;
+
+        if (_uploadedFile != null)
+        {
+            try
+            {
+                var uploadsFolder = Path.Combine(WebHostEnvironment.WebRootPath, "uploads", "images");
+                if (!Directory.Exists(uploadsFolder))
+                {
+                    Directory.CreateDirectory(uploadsFolder);
+                }
+
+                var extension = Path.GetExtension(_uploadedFile.Name);
+                var fileName = $"variant_{dbVariante.Id}_{DateTime.Now.Ticks}{extension}";
+                var filePath = Path.Combine(uploadsFolder, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await _uploadedFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 5).CopyToAsync(stream);
+                }
+
+                finalImageUrl = $"/uploads/images/{fileName}";
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al guardar el archivo: {ex.Message}", Severity.Error);
+                return;
+            }
+        }
+
+        dbVariante.ImagenUrl = finalImageUrl;
+        dbVariante.UltimaActualizacion = DateTime.Now;
+        await context.SaveChangesAsync();
+
+        _editingVariante.ImagenUrl = finalImageUrl;
+        _editingVariante.UltimaActualizacion = dbVariante.UltimaActualizacion;
+
+        if (_selectedProducto != null)
+        {
+            var uiVariante = _selectedProducto.Variantes.FirstOrDefault(v => v.Id == _editingVariante.Id);
+            if (uiVariante != null)
+            {
+                uiVariante.ImagenUrl = finalImageUrl;
+                uiVariante.UltimaActualizacion = dbVariante.UltimaActualizacion;
+            }
+        }
+
+        Snackbar.Add("Imagen guardada con éxito.", Severity.Success);
+        _imageUploadOpen = false;
+        _editingVariante = null;
+        _uploadedFile = null;
+        _newImageUrl = "";
+        
+        await LoadProductos();
     }
 
     private void OpenAddVarianteDialog()
@@ -531,6 +881,31 @@
         if (!_varianteFormIsValid) return;
 
         using var context = await DbFactory.CreateDbContextAsync();
+
+        // 1. Validar si ya existe el mismo SKU en el mismo portal/sitio
+        var existeEnMismoSitio = await context.VariantesComerciales
+            .AnyAsync(v => v.Sku == _newVariante.Sku && v.CatalogoSitioId == _newVariante.CatalogoSitioId);
+
+        if (existeEnMismoSitio)
+        {
+            Snackbar.Add("Este SKU ya se encuentra registrado para este mismo portal.", Severity.Error);
+            return;
+        }
+
+        // 2. Validar si el SKU ya existe en otro Producto Maestro
+        var varianteExistente = await context.VariantesComerciales
+            .Include(v => v.ProductoMaestro)
+            .FirstOrDefaultAsync(v => v.Sku == _newVariante.Sku);
+
+        bool vinculadoAOtro = false;
+        if (varianteExistente != null && varianteExistente.ProductoMaestro != null)
+        {
+            var masterProduct = varianteExistente.ProductoMaestro;
+            _newVariante.ProductoMaestroId = masterProduct.Id;
+            _selectedProducto = masterProduct; // Cambiar el producto seleccionado actual para visualizarlo al cerrar el diálogo
+            vinculadoAOtro = true;
+        }
+
         context.VariantesComerciales.Add(_newVariante);
         await context.SaveChangesAsync();
 
@@ -548,9 +923,19 @@
             await context.SaveChangesAsync();
         }
 
-        Snackbar.Add("Enlace comercial vinculado con éxito.", Severity.Success);
+        if (vinculadoAOtro)
+        {
+            Snackbar.Add($"El SKU ya existía. Se vinculó automáticamente al producto maestro '{_selectedProducto?.Nombre}'.", Severity.Info);
+        }
+        else
+        {
+            Snackbar.Add("Enlace comercial vinculado con éxito.", Severity.Success);
+        }
+
         _addVarianteOpen = false;
         await LoadProductoDetalle();
+        await LoadDescuentos();
+        await LoadProductos(); // Recargar el listado de productos para reflejar los cambios
     }
 
     private async Task DeleteVariante(VarianteComercial variante)
@@ -566,6 +951,7 @@
 
             Snackbar.Add("Enlace eliminado.", Severity.Success);
             await LoadProductoDetalle();
+            await LoadDescuentos();
         }
     }
 
@@ -604,6 +990,39 @@
             (MarkupString)htmlContent,
             yesText: "Entendido");
     }
+
+    private async Task LoadDescuentos()
+    {
+        using var context = await DbFactory.CreateDbContextAsync();
+        var rawDescuentos = await context.VariantesComerciales
+            .Include(v => v.ProductoMaestro)
+            .Include(v => v.CatalogoSitio)
+            .Where(v => v.PrecioActual.HasValue && v.PrecioAnterior.HasValue && v.PrecioActual.Value < v.PrecioAnterior.Value)
+            .OrderByDescending(v => (v.PrecioAnterior!.Value - v.PrecioActual!.Value) / v.PrecioAnterior!.Value)
+            .Take(4)
+            .ToListAsync();
+
+        _descuentos = rawDescuentos.Select(v => new DescuentoItem
+        {
+            Producto = v.ProductoMaestro!,
+            Nombre = v.ProductoMaestro!.Nombre,
+            SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda",
+            PrecioAnterior = v.PrecioAnterior!.Value,
+            PrecioActual = v.PrecioActual!.Value,
+            ImagenUrl = v.ImagenUrl
+        }).ToList();
+    }
+
+    private class DescuentoItem
+    {
+        public ProductoMaestro Producto { get; set; } = null!;
+        public string Nombre { get; set; } = string.Empty;
+        public string SitioNombre { get; set; } = string.Empty;
+        public decimal PrecioAnterior { get; set; }
+        public decimal PrecioActual { get; set; }
+        public decimal DescuentoPorcentaje => PrecioAnterior > 0 ? ((PrecioAnterior - PrecioActual) / PrecioAnterior) * 100 : 0;
+        public string? ImagenUrl { get; set; }
+    }
 }
 
 <style>
@@ -614,6 +1033,13 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+    .hover-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .hover-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
     /* Estilos responsivos de navegación pure CSS */
