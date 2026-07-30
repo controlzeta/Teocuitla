@@ -50,6 +50,24 @@ namespace Teocuitla.Shared.Helpers
                 result.MetodoDeteccion = "Analisis Semantico DOM (Fallback)";
             }
 
+            // APRENDIZAJE / CORRECCIÓN DE DESCUENTOS:
+            // Si el precio detectado es el original, pero el DOM tiene un precio rebajado explícito, preferir el precio rebajado.
+            var priceAfterDiscountNode = doc.DocumentNode.SelectSingleNode("//*[contains(@class, 'price-after-discount') or contains(@class, 'price-discount') or contains(@class, 'special-price') or contains(@class, 'sale-price')]");
+            if (priceAfterDiscountNode != null)
+            {
+                var match = PriceRegex.Match(priceAfterDiscountNode.InnerText);
+                if (match.Success)
+                {
+                    var priceValStr = match.Groups[1].Value.Replace(",", "");
+                    if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                    {
+                        result.Precio = parsedPrice;
+                        result.XPathSugerido = GetSmartXPath(priceAfterDiscountNode);
+                        result.MetodoDeteccion += " (Con Corrección de Descuento DOM)";
+                    }
+                }
+            }
+
             // APRENDIZAJE: Si logramos extraer un precio exitosamente pero aun no tenemos un selector (como en JSON-LD o Meta Tags),
             // buscamos en caliente el elemento visual en el DOM que contiene dicho precio y generamos su XPath inteligente.
             if (result.Precio.HasValue && string.IsNullOrEmpty(result.XPathSugerido))
@@ -137,7 +155,7 @@ namespace Teocuitla.Shared.Helpers
 
         private static bool ParseProductElement(JsonElement elem, HeuristicResult result)
         {
-            if (elem.TryGetProperty("@type", out var typeProp) && typeProp.GetString() == "Product")
+            if (elem.TryGetProperty("@type", out var typeProp) && typeProp.GetString()?.Equals("Product", StringComparison.OrdinalIgnoreCase) == true)
             {
                 if (elem.TryGetProperty("name", out var nameProp))
                 {
@@ -196,7 +214,7 @@ namespace Teocuitla.Shared.Helpers
                     }
                 }
 
-                return !string.IsNullOrEmpty(result.Nombre) || result.Precio.HasValue;
+                return result.Precio.HasValue;
             }
             return false;
         }
@@ -236,7 +254,7 @@ namespace Teocuitla.Shared.Helpers
             var titleNode = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']") 
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:title']")
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@name='title']");
-            if (titleNode != null)
+            if (titleNode != null && string.IsNullOrEmpty(result.Nombre))
             {
                 result.Nombre = titleNode.GetAttributeValue("content", "").Trim();
             }
@@ -244,7 +262,7 @@ namespace Teocuitla.Shared.Helpers
             var imgNode = doc.DocumentNode.SelectSingleNode("//meta[@property='og:image']") 
                           ?? doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:image']")
                           ?? doc.DocumentNode.SelectSingleNode("//meta[@name='image']");
-            if (imgNode != null)
+            if (imgNode != null && string.IsNullOrEmpty(result.ImagenUrl))
             {
                 result.ImagenUrl = imgNode.Attributes["content"]?.Value;
             }
@@ -281,18 +299,21 @@ namespace Teocuitla.Shared.Helpers
         private static void ExtractFromDomHeuristics(HtmlDocument doc, HeuristicResult result)
         {
             var h1Node = doc.DocumentNode.SelectSingleNode("//h1");
-            if (h1Node != null)
+            if (string.IsNullOrEmpty(result.Nombre))
             {
-                result.Nombre = h1Node.InnerText.Trim();
-            }
-            else
-            {
-                var titleNode = doc.DocumentNode.SelectSingleNode("//title");
-                if (titleNode != null)
+                if (h1Node != null)
                 {
-                    var titleText = titleNode.InnerText;
-                    var separatorIndex = titleText.IndexOfAny(new[] { '|', '-', '•' });
-                    result.Nombre = separatorIndex > 0 ? titleText.Substring(0, separatorIndex).Trim() : titleText.Trim();
+                    result.Nombre = h1Node.InnerText.Trim();
+                }
+                else
+                {
+                    var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+                    if (titleNode != null)
+                    {
+                        var titleText = titleNode.InnerText;
+                        var separatorIndex = titleText.IndexOfAny(new[] { '|', '-', '•' });
+                        result.Nombre = separatorIndex > 0 ? titleText.Substring(0, separatorIndex).Trim() : titleText.Trim();
+                    }
                 }
             }
 
@@ -304,7 +325,7 @@ namespace Teocuitla.Shared.Helpers
 
             var mainImg = doc.DocumentNode.SelectSingleNode("//img[contains(@class, 'product') or contains(@id, 'product') or contains(@src, 'product')]")
                           ?? doc.DocumentNode.SelectSingleNode("//img[@id='landingImage' or @id='main-image' or @class='front-image']");
-            if (mainImg != null)
+            if (mainImg != null && string.IsNullOrEmpty(result.ImagenUrl))
             {
                 result.ImagenUrl = mainImg.Attributes["src"]?.Value 
                                    ?? mainImg.Attributes["data-src"]?.Value;
@@ -333,6 +354,70 @@ namespace Teocuitla.Shared.Helpers
                     }
                 }
             }
+            if (!result.Precio.HasValue)
+            {
+                var priceVal = FindPriceInDom(doc, out var priceNode);
+                if (priceVal.HasValue)
+                {
+                    result.Precio = priceVal.Value;
+                    if (priceNode != null)
+                    {
+                        result.XPathSugerido = GetSmartXPath(priceNode);
+                    }
+                }
+            }
+        }
+
+        private static decimal? FindPriceInDom(HtmlDocument doc, out HtmlNode? priceNode)
+        {
+            priceNode = null;
+            var priceCandidates = doc.DocumentNode.SelectNodes("//*[contains(@class, 'price') or contains(@class, 'amount') or contains(@id, 'price') or contains(@class, 'special') or contains(@class, 'promo')]");
+            if (priceCandidates != null)
+            {
+                foreach (var candidate in priceCandidates)
+                {
+                    if (candidate.InnerText.Length > 50) continue;
+                    var match = PriceRegex.Match(candidate.InnerText);
+                    if (match.Success)
+                    {
+                        var priceValStr = match.Groups[1].Value.Replace(",", "");
+                        if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                        {
+                            if (parsedPrice > 0)
+                            {
+                                priceNode = candidate;
+                                return parsedPrice;
+                            }
+                        }
+                    }
+                }
+            }
+
+            var allTextNodes = doc.DocumentNode.SelectNodes("//text()");
+            if (allTextNodes != null)
+            {
+                foreach (var node in allTextNodes)
+                {
+                    var txt = node.InnerText.Trim();
+                    if (txt.Length < 30)
+                    {
+                        var match = PriceRegex.Match(txt);
+                        if (match.Success)
+                        {
+                            var priceValStr = match.Groups[1].Value.Replace(",", "");
+                            if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                            {
+                                if (parsedPrice > 0)
+                                {
+                                    priceNode = node.ParentNode;
+                                    return parsedPrice;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         /// <summary>

@@ -46,8 +46,8 @@
                                     <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text" Style="max-width: 100%;">@item.Nombre</MudText>
                                     
                                     <div class="d-flex align-center gap-2 mt-1">
-                                        <span style="text-decoration: line-through; color: #888888; font-size: 11px;">$@($"{item.PrecioAnterior:F2}")</span>
-                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 13px;">$@($"{item.PrecioActual:F2}")</span>
+                                        <span style="text-decoration: line-through; color: #888888; font-size: 11px;">$@($"{item.PrecioAnterior:N2}")</span>
+                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 13px;">$@($"{item.PrecioActual:N2}")</span>
                                     </div>
                                 </div>
                             </div>
@@ -259,7 +259,7 @@
                                                     <div>
                                                         <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Actual</MudText>
                                                         <MudText Typo="Typo.h5" Class="font-bold text-primary">
-                                                            @(v.PrecioActual.HasValue ? $"${v.PrecioActual:F2}" : "Sin datos")
+                                                            @(v.PrecioActual.HasValue ? $"${v.PrecioActual:N2}" : "Sin datos")
                                                         </MudText>
                                                     </div>
                                                     @if (v.PrecioActual.HasValue && v.PrecioAnterior.HasValue)
@@ -269,13 +269,13 @@
                                                             @if (diff < 0)
                                                             {
                                                                 <span class="mud-text-success font-bold d-flex align-center gap-1">
-                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" /> @($"${Math.Abs(diff):F2}")
+                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" /> @($"${Math.Abs(diff):N2}")
                                                                 </span>
                                                             }
                                                             else if (diff > 0)
                                                             {
                                                                 <span class="mud-text-error font-bold d-flex align-center gap-1">
-                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" /> @($"${diff:F2}")
+                                                                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" /> @($"${diff:N2}")
                                                                 </span>
                                                             }
                                                             else
@@ -315,12 +315,9 @@
                         }
                         else
                         {
-                            <MudChart ChartType="ChartType.Line" 
-                                      ChartSeries="@_chartSeries" 
-                                      XAxisLabels="@_chartLabels" 
-                                      Width="100%" 
-                                      Height="280px" 
-                                      ChartOptions="@_chartOptions" />
+                            <div style="width: 100%; height: 280px; position: relative;">
+                                <canvas id="priceEvolutionChart"></canvas>
+                            </div>
                         }
                     </MudPaper>
                 }
@@ -486,6 +483,7 @@
     private List<ChartSeries<double>> _chartSeries = new();
     private string[] _chartLabels = Array.Empty<string>();
     private readonly ChartOptions _chartOptions = new() { ShowLegend = true };
+    private bool _chartNeedsRender = false;
 
     // Formularios e Inlines
     private bool _addProductoOpen = false;
@@ -655,6 +653,7 @@
                 });
             }
             _chartLabels = new string[] { DateTime.Today.ToString("dd/MM/yyyy") };
+            _chartNeedsRender = true;
             return;
         }
 
@@ -705,6 +704,16 @@
                 Name = v.CatalogoSitio?.Nombre ?? "Tienda",
                 Data = dataPoints.ToArray()
             });
+        }
+        _chartNeedsRender = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chartNeedsRender && _chartSeries.Count > 0)
+        {
+            _chartNeedsRender = false;
+            await JS.InvokeVoidAsync("teocuitlaRenderPriceChart", "priceEvolutionChart", _chartLabels, _chartSeries);
         }
     }
 

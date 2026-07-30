@@ -298,6 +298,17 @@ namespace Teocuitla.Worker.Services
                 var precioTexto = precioNodo.InnerText;
                 var precioDecimal = ParsePrice(precioTexto);
 
+                // Corrección de descuentos para Costco y otros portales
+                var priceAfterDiscountNode = doc.DocumentNode.SelectSingleNode("//*[contains(@class, 'price-after-discount') or contains(@class, 'price-discount') or contains(@class, 'special-price') or contains(@class, 'sale-price')]");
+                if (priceAfterDiscountNode != null)
+                {
+                    var parsedDiscount = ParsePrice(priceAfterDiscountNode.InnerText);
+                    if (parsedDiscount.HasValue && parsedDiscount.Value > 0)
+                    {
+                        precioDecimal = parsedDiscount;
+                    }
+                }
+
                 if (!precioDecimal.HasValue)
                 {
                     throw new Exception($"No se pudo parsear el precio extraído: '{precioTexto}'");
@@ -530,14 +541,46 @@ namespace Teocuitla.Worker.Services
                     throw new Exception("No se encontró el elemento de precio usando Selenium.");
                 }
 
-                var precioTexto = precioElement.Text;
+                var precioTexto = precioElement.GetAttribute("textContent");
                 if (string.IsNullOrWhiteSpace(precioTexto))
                 {
-                    // Intentar leer el contenido de texto si .Text está vacío (común en elementos ocultos o dinámicos)
-                    precioTexto = precioElement.GetAttribute("textContent") ?? string.Empty;
+                    precioTexto = precioElement.Text;
                 }
 
                 var precioDecimal = ParsePrice(precioTexto);
+
+                // Corrección de descuentos para Costco y otros portales en Selenium
+                try
+                {
+                    var discountSelectors = new[] { 
+                        "//*[contains(@class, 'price-after-discount')]",
+                        "//*[contains(@class, 'price-discount')]",
+                        "//*[contains(@class, 'special-price')]",
+                        "//*[contains(@class, 'sale-price')]"
+                    };
+                    
+                    foreach (var xpath in discountSelectors)
+                    {
+                        var elements = driver.FindElements(By.XPath(xpath));
+                        if (elements.Count > 0)
+                        {
+                            var element = elements[0];
+                            var txt = element.Text;
+                            if (string.IsNullOrWhiteSpace(txt))
+                            {
+                                txt = element.GetAttribute("textContent") ?? string.Empty;
+                            }
+                            var parsedDiscount = ParsePrice(txt);
+                            if (parsedDiscount.HasValue && parsedDiscount.Value > 0)
+                            {
+                                precioDecimal = parsedDiscount;
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch { /* ignore override failures */ }
+
                 if (!precioDecimal.HasValue)
                 {
                     throw new Exception($"No se pudo parsear el precio extraído por Selenium: '{precioTexto}'");

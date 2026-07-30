@@ -81,7 +81,7 @@
                                     <MudGrid Spacing="1" Class="align-center">
                                         <MudItem xs="12" sm="3">
                                             <MudText Typo="Typo.subtitle2" Class="font-bold">Precio del Producto</MudText>
-                                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(_heuristicResult.Precio.HasValue ? $"${_heuristicResult.Precio:F2}" : "No detectado")</MudText>
+                                            <MudText Typo="Typo.caption" Class="mud-text-success font-medium">Heurística: @(_heuristicResult.Precio.HasValue ? $"${_heuristicResult.Precio:N2}" : "No detectado")</MudText>
                                         </MudItem>
                                         <MudItem xs="12" sm="4">
                                             <MudTextField @bind-Value="_selectorPrecio" Label="Selector Actual (Sitio)" Variant="Variant.Outlined" Margin="Margin.Dense" />

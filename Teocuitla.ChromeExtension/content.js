@@ -8,6 +8,71 @@ function getStableHash(str) {
   return 'GEN-' + Math.abs(hash).toString(36).toUpperCase();
 }
 
+function extractSku(url, jsonLdProduct) {
+  let sku = '';
+
+  // 1. Intentar desde JSON-LD proporcionado
+  if (jsonLdProduct && jsonLdProduct.sku) {
+    sku = jsonLdProduct.sku;
+  } else if (jsonLdProduct && (jsonLdProduct.mpn || jsonLdProduct.productID)) {
+    sku = jsonLdProduct.mpn || jsonLdProduct.productID;
+  }
+
+  // 2. Si no hay JSON-LD, intentar extraerlo en caliente del DOM
+  if (!sku) {
+    const jsonLd = tryExtractJsonLd();
+    if (jsonLd) {
+      sku = jsonLd.sku || jsonLd.mpn || jsonLd.productID || '';
+    }
+  }
+
+  // 3. Intentar meta tags
+  if (!sku) {
+    const metaSku = document.querySelector('meta[property="product:retailer_item_id"]') || 
+                    document.querySelector('meta[itemprop="sku"]') ||
+                    document.querySelector('meta[name="sku"]') ||
+                    document.querySelector('meta[property="og:sku"]');
+    if (metaSku) {
+      sku = metaSku.content || metaSku.innerText;
+    }
+  }
+
+  // 4. Intentar selectores DOM comunes de SKU
+  if (!sku) {
+    const domSku = document.querySelector('.product-meta__sku-number') || 
+                   document.querySelector('[class*="sku-number"]') || 
+                   document.querySelector('[class*="sku"]') || 
+                   document.querySelector('[id*="sku"]') ||
+                   document.querySelector('[data-sku]');
+    if (domSku) {
+      sku = domSku.innerText || domSku.getAttribute('data-sku') || domSku.value || '';
+    }
+  }
+
+  // Limpiar SKU si tiene prefijos de texto
+  if (sku) {
+    sku = String(sku).replace(/sku\s*:\s*/i, '').trim();
+  }
+
+  // 5. Intentar regex en URL
+  if (!sku) {
+    const skuMatch = url.match(/\/p\/(\d+)/) || 
+                     url.match(/\/dp\/([A-Z0-9]{10})/i) || 
+                     url.match(/(MLM-?\d+)/i) || 
+                     url.match(/\/(\d{5,12})(?:\/|\.|$)/);
+    if (skuMatch) {
+      sku = skuMatch[1].replace('-', '');
+    }
+  }
+
+  // 6. Generar hash estable como fallback
+  if (!sku) {
+    sku = getStableHash(url);
+  }
+
+  return String(sku).trim();
+}
+
 function extractProductData() {
   let url = window.location.href;
   let domain = window.location.hostname.replace('www.', '');
@@ -47,7 +112,7 @@ function extractProductData() {
         let precio = 0;
         const priceNode = evaluateSelector(site.selectorPrecioXPath);
         if (priceNode) {
-          precio = parsePrice(priceNode.innerText);
+          precio = parsePrice(priceNode.textContent || priceNode.innerText);
         }
 
         let imagenUrl = '';
@@ -56,11 +121,7 @@ function extractProductData() {
           imagenUrl = imgNode ? (imgNode.src || imgNode.getAttribute('src') || '') : '';
         }
 
-        const skuMatch = url.match(/\/p\/(\d+)/) || 
-                         url.match(/\/dp\/([A-Z0-9]{10})/i) || 
-                         url.match(/(MLM-?\d+)/i) || 
-                         url.match(/\/(\d{5,12})(?:\/|\.|$)/);
-        const sku = skuMatch ? skuMatch[1].replace('-', '') : getStableHash(url);
+        const sku = extractSku(url, null);
         const color = '';
         const marca = extractBrandFromName(nombre);
 
@@ -111,9 +172,9 @@ function executeHardcodedOrGenericExtraction(url, domain) {
         sku = skuElem ? skuElem.innerText.replace(/\D/g, '') : '';
       }
 
-      priceNode = document.querySelector('.product-price-amount') || document.querySelector('.price') || document.querySelector('[itemprop="price"]');
+      priceNode = document.querySelector('.price-after-discount') || document.querySelector('.product-price-amount') || document.querySelector('.price') || document.querySelector('[itemprop="price"]');
       if (priceNode) {
-        precio = parsePrice(priceNode.innerText);
+        precio = parsePrice(priceNode.textContent || priceNode.innerText);
       }
 
       imageNode = document.querySelector('.product-image img') || document.querySelector('#product-image') || document.querySelector('img.main-image');
@@ -251,26 +312,7 @@ function executeHardcodedOrGenericExtraction(url, domain) {
       }
 
       if (!sku) {
-        const metaSku = document.querySelector('meta[property="product:retailer_item_id"]') || 
-                        document.querySelector('meta[itemprop="sku"]') ||
-                        document.querySelector('meta[name="sku"]');
-        if (metaSku) {
-          sku = metaSku.content || metaSku.innerText;
-        } else {
-          const domSku = document.querySelector('.product-meta__sku-number') || 
-                         document.querySelector('[class*="sku-number"]') || 
-                         document.querySelector('[class*="sku"]') || 
-                         document.querySelector('[id*="sku"]') ||
-                         document.querySelector('[data-sku]');
-          if (domSku) {
-            sku = domSku.innerText || domSku.getAttribute('data-sku') || domSku.value || '';
-          }
-        }
-        
-        if (!sku) {
-          const urlSkuMatch = url.match(/\/(\d{5,12})(?:\/|\.|$)/) || url.match(/\/([A-Z0-9]{10})(?:\/|\.|$)/i);
-          sku = urlSkuMatch ? urlSkuMatch[1] : getStableHash(url);
-        }
+        sku = extractSku(url, jsonLdProduct);
       }
 
       // 3. Fallback DOM Heuristics (si aún faltan datos cruciales)
@@ -282,7 +324,7 @@ function executeHardcodedOrGenericExtraction(url, domain) {
       if (precio === 0) {
         priceNode = document.querySelector('.price') || document.querySelector('[class*="price"]') || document.querySelector('[id*="price"]');
         if (priceNode) {
-          precio = parsePrice(priceNode.innerText);
+          precio = parsePrice(priceNode.textContent || priceNode.innerText);
         }
       }
 

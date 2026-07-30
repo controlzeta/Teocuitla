@@ -28,6 +28,7 @@ namespace Teocuitla.Worker.Services
 
             var activeProxies = await context.RegistroProxies
                 .Where(p => p.Activo && !p.Baneado)
+                .OrderBy(p => p.Id)
                 .ToListAsync();
 
             if (activeProxies.Count == 0)

@@ -132,6 +132,7 @@ namespace Teocuitla.Worker
             var allVariantes = await context.VariantesComerciales
                 .Include(v => v.CatalogoSitio)
                 .Where(v => v.CatalogoSitio != null && v.CatalogoSitio.Activo && v.Activo)
+                .OrderBy(v => v.Id)
                 .ToListAsync();
 
             // Filtrar en memoria por intervalo

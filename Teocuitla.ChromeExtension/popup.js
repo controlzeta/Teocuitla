@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('apiKey');
   const btnSave = document.getElementById('btnSave');
   const btnExtract = document.getElementById('btnExtract');
+  const btnReload = document.getElementById('btnReload');
   const btnRefresh = document.getElementById('btnRefresh');
   const btnOpenAll = document.getElementById('btnOpenAll');
   const statusMsg = document.getElementById('statusMsg');
@@ -76,6 +77,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  // 3.5. Recargar Extensión
+  if (btnReload) {
+    btnReload.addEventListener('click', () => {
+      chrome.runtime.reload();
+    });
+  }
 
   // 4. Refrescar lista de pendientes
   btnRefresh.addEventListener('click', () => {

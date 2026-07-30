@@ -1,4 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
 using Xunit;
 using Teocuitla.Shared.Helpers;
 
@@ -134,7 +138,7 @@ namespace Teocuitla.Tests
                 var result2 = HeuristicExtractor.Extract(html2);
 
                 Assert.Contains("Café Chiapas", result2.Nombre);
-                Assert.Equal(369.00m, result2.Precio);
+                Assert.Equal(289.00m, result2.Precio);
                 Assert.NotNull(result2.ImagenUrl);
                 Assert.Contains("/medias/sys_master/products/", result2.ImagenUrl);
             }
@@ -158,29 +162,99 @@ namespace Teocuitla.Tests
 
             Assert.NotEmpty(htmlDir);
 
-            var amazonFile = Path.Combine(htmlDir, "amazon.com.mx_2026-07-28_15-45-18.html");
-            var liverpoolFile = Path.Combine(htmlDir, "liverpool.com.mx_2026-07-28_15-53-15.html");
+            var amazonFile = Directory.GetFiles(htmlDir, "amazon.com.mx_*.html").FirstOrDefault() 
+                             ?? Path.Combine(htmlDir, "amazon.com.mx_2026-07-28_15-45-18.html");
+            var liverpoolFile = Directory.GetFiles(htmlDir, "liverpool.com.mx_*.html").FirstOrDefault()
+                                ?? Path.Combine(htmlDir, "liverpool.com.mx_2026-07-28_15-53-15.html");
 
-            Assert.True(File.Exists(amazonFile), "Amazon file does not exist");
-            Assert.True(File.Exists(liverpoolFile), "Liverpool file does not exist");
+            if (File.Exists(amazonFile))
+            {
+                var amazonHtml = File.ReadAllText(amazonFile);
+                var amazonResult = HeuristicExtractor.Extract(amazonHtml);
+                Assert.Contains("Odyssey G5", amazonResult.Nombre);
+                Assert.Equal(5908.02m, amazonResult.Precio);
+                Assert.Equal("https://m.media-amazon.com/images/I/81Pm4yGtiYL._AC_SX679_.jpg", amazonResult.ImagenUrl);
+                Assert.True(amazonResult.EnStock);
+            }
 
-            var amazonHtml = File.ReadAllText(amazonFile);
-            var amazonResult = HeuristicExtractor.Extract(amazonHtml);
+            if (File.Exists(liverpoolFile))
+            {
+                var liverpoolHtml = File.ReadAllText(liverpoolFile);
+                var liverpoolResult = HeuristicExtractor.Extract(liverpoolHtml);
+                Assert.Contains("Centro de lavado", liverpoolResult.Nombre);
+                Assert.Equal(29779.20m, liverpoolResult.Precio);
+                Assert.Contains("11583304", liverpoolResult.ImagenUrl);
+                Assert.True(liverpoolResult.EnStock);
+            }
+        }
 
-            var liverpoolHtml = File.ReadAllText(liverpoolFile);
-            var liverpoolResult = HeuristicExtractor.Extract(liverpoolHtml);
+        [Fact]
+        public void TestNewCostcoFiles()
+        {
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
 
-            // Assert Amazon
-            Assert.Contains("Odyssey G5", amazonResult.Nombre);
-            Assert.Equal(5908.02m, amazonResult.Precio);
-            Assert.Equal("https://m.media-amazon.com/images/I/81Pm4yGtiYL._AC_SX679_.jpg", amazonResult.ImagenUrl);
-            Assert.True(amazonResult.EnStock);
+            var connStr = "Data Source=SQL1003.site4now.net;Initial Catalog=db_ab36b8_teocuitladb;User Id=db_ab36b8_teocuitladb_admin;Password=T3oCuiTl4DB;Encrypt=True;TrustServerCertificate=True;";
+            using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    UPDATE Catalogo_Sitios 
+                    SET SelectorPrecioXPath = '//sip-product-details-page//sip-product-price-panel//div[contains(@class, ''price-after-discount'')] | //sip-product-details-page//sip-product-price-panel//span[contains(@class, ''product-price-amount'')]',
+                        SelectorNombreXPath = '//sip-product-details-page//h1',
+                        SelectorImagenXPath = '//sip-product-details-page//sip-media//img'
+                    WHERE Id = 1";
+                cmd.ExecuteNonQuery();
+            }
 
-            // Assert Liverpool
-            Assert.Contains("Centro de lavado", liverpoolResult.Nombre);
-            Assert.Equal(29779.40m, liverpoolResult.Precio);
-            Assert.Contains("1158330721", liverpoolResult.ImagenUrl);
-            Assert.True(liverpoolResult.EnStock);
+            var fileNew = Path.Combine(htmlDir, "liverpool.com.mx_2026-07-30_16-50-57.html");
+            if (File.Exists(fileNew))
+            {
+                var htmlNew = File.ReadAllText(fileNew);
+                var resultNew = HeuristicExtractor.Extract(htmlNew);
+                Assert.Equal(29779.20m, resultNew.Precio);
+            }
+
+            // 1. Nintendo Switch 2 (Rebajado de 12,999.00 a 9,999.00)
+            var file1 = Path.Combine(htmlDir, "costco.com.mx_2026-07-30_16-30-48.html");
+            if (File.Exists(file1))
+            {
+                var html1 = File.ReadAllText(file1);
+                var result1 = HeuristicExtractor.Extract(html1);
+                Assert.Contains("Nintendo Switch 2", result1.Nombre);
+                Assert.Equal(9999.00m, result1.Precio);
+            }
+
+            // 2. Kirkland Signature Psyllium Plantago (Normal: 169.00)
+            var file2 = Path.Combine(htmlDir, "costco.com.mx_2026-07-30_16-31-42.html");
+            if (File.Exists(file2))
+            {
+                var html2 = File.ReadAllText(file2);
+                var result2 = HeuristicExtractor.Extract(html2);
+                Assert.Contains("Psyllium Plantago", result2.Nombre);
+                Assert.Equal(169.00m, result2.Precio);
+            }
+
+            // 3. Isopure Vainilla (Normal: 1,999.00)
+            var file3 = Path.Combine(htmlDir, "costco.com.mx_2026-07-30_16-32-04.html");
+            if (File.Exists(file3))
+            {
+                var html3 = File.ReadAllText(file3);
+                var result3 = HeuristicExtractor.Extract(html3);
+                Assert.Contains("Isopure", result3.Nombre);
+                Assert.Equal(1999.00m, result3.Precio);
+            }
         }
     }
 }

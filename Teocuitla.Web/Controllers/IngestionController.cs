@@ -206,18 +206,14 @@ namespace Teocuitla.Web.Controllers
                     // 1. Resolver o crear el sitio de catálogo
                     var baseDomain = dto.Dominio.ToLower().Trim();
                     var site = await _context.CatalogoSitios
-                        .FirstOrDefaultAsync(s => s.UrlBase != null && s.UrlBase.Contains(baseDomain));
+                        .Where(s => s.UrlBase != null && s.UrlBase.Contains(baseDomain))
+                        .OrderBy(s => s.Id)
+                        .FirstOrDefaultAsync();
 
                     if (site == null)
                     {
-                        site = new CatalogoSitio
-                        {
-                            Nombre = baseDomain,
-                            UrlBase = dto.UrlProducto.StartsWith("https") ? $"https://{baseDomain}" : $"http://{baseDomain}",
-                            EstrategiaEvasion = "Standard"
-                        };
-                        _context.CatalogoSitios.Add(site);
-                        await _context.SaveChangesAsync();
+                        _logger.LogWarning("La extensión intentó enviar datos para un sitio no registrado en la base de datos: {Dominio}", baseDomain);
+                        return BadRequest($"El sitio con dominio '{baseDomain}' no existe en la base de datos.");
                     }
 
                     // Auto-aprendizaje/corrección de selectores a partir de la extensión
@@ -247,7 +243,9 @@ namespace Teocuitla.Web.Controllers
 
                     // 2. Buscar variante comercial existente por SKU y Sitio
                     var variant = await _context.VariantesComerciales
-                        .FirstOrDefaultAsync(v => v.Sku == dto.Sku && v.CatalogoSitioId == site.Id);
+                        .Where(v => v.Sku == dto.Sku && v.CatalogoSitioId == site.Id)
+                        .OrderBy(v => v.Id)
+                        .FirstOrDefaultAsync();
 
                     bool priceChanged = false;
 
@@ -274,7 +272,9 @@ namespace Teocuitla.Web.Controllers
 
                         // Buscar si existe un producto maestro por nombre y marca
                         var masterProduct = await _context.ProductosMaestros
-                            .FirstOrDefaultAsync(p => p.Nombre == dto.Nombre && p.Marca == dto.Marca);
+                            .Where(p => p.Nombre == dto.Nombre && p.Marca == dto.Marca)
+                            .OrderBy(p => p.Id)
+                            .FirstOrDefaultAsync();
 
                         if (masterProduct == null)
                         {
@@ -356,6 +356,7 @@ namespace Teocuitla.Web.Controllers
             {
                 var sites = await _context.CatalogoSitios
                     .Where(s => s.Activo)
+                    .OrderBy(s => s.Id)
                     .Select(s => new {
                         s.Id,
                         s.Nombre,
