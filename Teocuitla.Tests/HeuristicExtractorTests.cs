@@ -204,19 +204,6 @@ namespace Teocuitla.Tests
                 currentDir = Path.GetDirectoryName(currentDir);
             }
 
-            var connStr = "Data Source=SQL1003.site4now.net;Initial Catalog=db_ab36b8_teocuitladb;User Id=db_ab36b8_teocuitladb_admin;Password=T3oCuiTl4DB;Encrypt=True;TrustServerCertificate=True;";
-            using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
-            {
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    UPDATE Catalogo_Sitios 
-                    SET SelectorPrecioXPath = '//sip-product-details-page//sip-product-price-panel//div[contains(@class, ''price-after-discount'')] | //sip-product-details-page//sip-product-price-panel//span[contains(@class, ''product-price-amount'')]',
-                        SelectorNombreXPath = '//sip-product-details-page//h1',
-                        SelectorImagenXPath = '//sip-product-details-page//sip-media//img'
-                    WHERE Id = 1";
-                cmd.ExecuteNonQuery();
-            }
 
             var fileNew = Path.Combine(htmlDir, "liverpool.com.mx_2026-07-30_16-50-57.html");
             if (File.Exists(fileNew))

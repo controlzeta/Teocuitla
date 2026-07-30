@@ -5,6 +5,7 @@
 @inject IDialogService DialogService
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
+@inject IHttpClientFactory HttpClientFactory
 
 <PageTitle>Catálogo de Productos - Teocuitla</PageTitle>
 
@@ -91,7 +92,8 @@
                 <MudSelect T="int?" Value="_selectedSitioId" ValueChanged="OnSitioFilterChanged" Label="Tienda" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
                     @foreach (var s in _sitios)
                     {
-                        <MudSelectItem Value="@((int?)s.Id)">@s.Nombre</MudSelectItem>
+                        var count = _sitioCounts.GetValueOrDefault(s.Id, 0);
+                        <MudSelectItem Value="@((int?)s.Id)">@($"{s.Nombre} ({count})")</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
@@ -99,7 +101,8 @@
                 <MudSelect T="string" Value="_selectedCategoria" ValueChanged="OnCategoriaFilterChanged" Label="Categoría" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
                     @foreach (var cat in _categorias)
                     {
-                        <MudSelectItem Value="@cat">@cat</MudSelectItem>
+                        var count = _categoriaCounts.GetValueOrDefault(cat, 0);
+                        <MudSelectItem Value="@cat">@($"{cat} ({count})")</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
@@ -123,7 +126,8 @@
                 @foreach (var prod in _productos)
                 {
                     var firstImgUrl = prod.Variantes.FirstOrDefault(v => !string.IsNullOrEmpty(v.ImagenUrl))?.ImagenUrl;
-                    <MudListItem Value="prod" Class="border-b border-solid mud-border-default py-2">
+                    var isSelected = _selectedProducto?.Id == prod.Id;
+                    <MudListItem Value="prod" Class="@(isSelected ? "selected-product-item border-b border-solid mud-border-default py-2" : "border-b border-solid mud-border-default py-2")">
                         <div class="d-flex align-center justify-space-between w-100">
                             <div class="d-flex align-center gap-3" style="min-width: 0;">
                                 @if (!string.IsNullOrEmpty(firstImgUrl))
@@ -289,8 +293,16 @@
                                         </div>
                                     </MudCardContent>
                                     <MudCardActions Class="py-1 px-3 border-t border-solid mud-border-default justify-space-between">
-                                        <div class="d-flex gap-1">
-                                            <MudIconButton Icon="@Icons.Material.Filled.Launch" Size="Size.Small" Color="Color.Primary" Href="@v.UrlProducto" Target="_blank" />
+                                        <div class="d-flex gap-1 align-center">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Launch" Size="Size.Small" Color="Color.Primary" Href="@v.UrlProducto" Target="_blank" Tooltip="Abrir en Tienda" />
+                                            @if (_trackingStates.GetValueOrDefault(v.Id))
+                                            {
+                                                <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" Class="mx-2" />
+                                            }
+                                            else
+                                            {
+                                                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" Color="Color.Success" Tooltip="Rastrear y Actualizar Ahora" OnClick="@(() => ActualizarPrecioOnline(v))" />
+                                            }
                                             @if (v.Activo && _variantFallaIds.TryGetValue(v.Id, out var fallaId))
                                             {
                                                 <MudIconButton Icon="@Icons.Material.Filled.BugReport" Size="Size.Small" Color="Color.Warning" Tooltip="Diagnosticar Falla" OnClick="@(() => DiagnosticarFalla(fallaId))" />
@@ -478,6 +490,9 @@
     private List<VarianteComercial> _variantes = new();
     private Dictionary<int, int> _variantFallaIds = new(); // key: VarianteComercialId, value: FallaId
     private bool _showDetails = false;
+    private Dictionary<int, bool> _trackingStates = new();
+    private Dictionary<int, int> _sitioCounts = new();
+    private Dictionary<string, int> _categoriaCounts = new();
 
     // Gráfica
     private List<ChartSeries<double>> _chartSeries = new();
@@ -558,6 +573,17 @@
         }
 
         _productos = await query.OrderBy(p => p.Nombre).ToListAsync();
+
+        // Calcular conteos para filtros (faceted counts)
+        _sitioCounts = _productos
+            .SelectMany(p => p.Variantes)
+            .GroupBy(v => v.CatalogoSitioId)
+            .ToDictionary(g => g.Key, g => g.Count());
+            
+        _categoriaCounts = _productos
+            .GroupBy(p => p.Categoria)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         _loadingProductos = false;
     }
 
@@ -1021,6 +1047,65 @@
             ImagenUrl = v.ImagenUrl
         }).ToList();
     }
+    private async Task ActualizarPrecioOnline(VarianteComercial v)
+    {
+        _trackingStates[v.Id] = true;
+        StateHasChanged();
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            
+            var html = await client.GetStringAsync(v.UrlProducto);
+            
+            var result = HeuristicExtractor.Extract(html);
+            if (result.Precio.HasValue)
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                var dbVariante = await context.VariantesComerciales.FindAsync(v.Id);
+                if (dbVariante != null)
+                {
+                    dbVariante.PrecioAnterior = dbVariante.PrecioActual;
+                    dbVariante.PrecioActual = result.Precio.Value;
+                    dbVariante.EnStock = result.EnStock;
+                    if (!string.IsNullOrEmpty(result.ImagenUrl) && string.IsNullOrEmpty(dbVariante.ImagenUrl))
+                    {
+                        dbVariante.ImagenUrl = result.ImagenUrl;
+                    }
+                    dbVariante.UltimaActualizacion = DateTime.Now;
+                    
+                    var hist = new HistorialPrecio
+                    {
+                        VarianteComercialId = v.Id,
+                        Precio = result.Precio.Value,
+                        EnStock = result.EnStock,
+                        FechaCaptura = DateTime.Now
+                    };
+                    context.HistorialPrecios.Add(hist);
+                    await context.SaveChangesAsync();
+                    
+                    Snackbar.Add($"Precio actualizado a ${result.Precio.Value:N2} ({v.CatalogoSitio?.Nombre})", Severity.Success);
+                    
+                    await LoadProductoDetalle();
+                    await LoadDescuentos();
+                    await LoadProductos();
+                }
+            }
+            else
+            {
+                Snackbar.Add($"No se pudo extraer el precio automáticamente de {v.CatalogoSitio?.Nombre}.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al conectar o rastrear: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _trackingStates[v.Id] = false;
+            StateHasChanged();
+        }
+    }
 
     private class DescuentoItem
     {
@@ -1049,6 +1134,17 @@
     .hover-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .selected-product-item {
+        border-left: 4px solid var(--mud-palette-primary) !important;
+        background-color: rgba(0, 93, 171, 0.08) !important;
+    }
+    .animate-fade {
+        animation: fadeIn 0.35s ease-out;
+    }
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     
     /* Estilos responsivos de navegación pure CSS */
