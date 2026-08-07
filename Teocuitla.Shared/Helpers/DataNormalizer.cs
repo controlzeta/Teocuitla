@@ -282,5 +282,53 @@ namespace Teocuitla.Shared.Helpers
             
             return url;
         }
+
+        public static string CleanProductUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl)) return string.Empty;
+
+            var url = rawUrl.Trim();
+
+            // 1. Quitar la parte del fragmento (#...)
+            int hashIndex = url.IndexOf('#');
+            if (hashIndex >= 0)
+            {
+                url = url.Substring(0, hashIndex);
+            }
+
+            // 2. Quitar parámetros de seguimiento de query strings
+            int queryIndex = url.IndexOf('?');
+            if (queryIndex >= 0)
+            {
+                var basePath = url.Substring(0, queryIndex);
+                var queryString = url.Substring(queryIndex + 1);
+
+                if (basePath.Contains("/up/") || basePath.Contains("/p/") || basePath.Contains("/dp/") || Regex.IsMatch(basePath, @"/MLM-?\d+", RegexOptions.IgnoreCase))
+                {
+                    url = basePath;
+                }
+                else
+                {
+                    var filteredParams = queryString.Split('&')
+                        .Where(p => !p.StartsWith("tracking_id=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("polycard_client=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("be_origin=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("overlay_label=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("search_layout=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("position=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("wid=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("sid=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("utm_", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("ref=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("gclid=", StringComparison.OrdinalIgnoreCase) &&
+                                    !p.StartsWith("fbclid=", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    url = filteredParams.Count > 0 ? $"{basePath}?{string.Join("&", filteredParams)}" : basePath;
+                }
+            }
+
+            return url.TrimEnd('/');
+        }
     }
 }

@@ -1,9 +1,15 @@
-let teocuitlaChartInstance = null;
+const teocuitlaChartInstances = {};
+
+function destroyChartIfExists(canvasId) {
+    if (teocuitlaChartInstances[canvasId]) {
+        teocuitlaChartInstances[canvasId].destroy();
+        delete teocuitlaChartInstances[canvasId];
+    }
+}
 
 window.teocuitlaRenderPriceChart = (canvasId, labels, series) => {
     const ctx = document.getElementById(canvasId);
     if (!ctx) {
-        // If element is not found, retry once after a short delay (for Blazor DOM updates)
         setTimeout(() => {
             const retryCtx = document.getElementById(canvasId);
             if (retryCtx) {
@@ -13,18 +19,17 @@ window.teocuitlaRenderPriceChart = (canvasId, labels, series) => {
         return;
     }
 
-    if (teocuitlaChartInstance) {
-        teocuitlaChartInstance.destroy();
-    }
+    destroyChartIfExists(canvasId);
 
     const colors = [
-        '#8f44fd', // Purple
-        '#10b981', // Green
-        '#06b6d4', // Cyan
+        '#d4af37', // Champagne Gold
+        '#10b981', // Emerald
+        '#94a3b8', // Slate Titanium
         '#f59e0b', // Amber
-        '#3b82f6', // Blue
-        '#ef4444'  // Red
+        '#38bdf8', // Sky Blue
+        '#e11d48'  // Rose Crimson
     ];
+
 
     const datasets = series.map((s, idx) => {
         const color = colors[idx % colors.length];
@@ -55,7 +60,7 @@ window.teocuitlaRenderPriceChart = (canvasId, labels, series) => {
         };
     });
 
-    teocuitlaChartInstance = new Chart(ctx, {
+    teocuitlaChartInstances[canvasId] = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
@@ -150,3 +155,111 @@ window.teocuitlaRenderPriceChart = (canvasId, labels, series) => {
         }
     });
 };
+
+window.teocuitlaRenderDonutChart = (canvasId, labels, data, colors) => {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) {
+        setTimeout(() => window.teocuitlaRenderDonutChart(canvasId, labels, data, colors), 100);
+        return;
+    }
+
+    destroyChartIfExists(canvasId);
+
+    const defaultColors = ['#8f44fd', '#ef4444', '#f59e0b', '#06b6d4', '#10b981', '#64748b'];
+    const bgColors = colors && colors.length ? colors : defaultColors;
+
+    teocuitlaChartInstances[canvasId] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: bgColors,
+                borderColor: '#0d0d11',
+                borderWidth: 3,
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '68%',
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        color: '#a1a1aa',
+                        font: { family: "'Outfit', sans-serif", size: 12 },
+                        boxWidth: 10,
+                        usePointStyle: true
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#14141a',
+                    titleColor: '#ffffff',
+                    bodyColor: '#a1a1aa',
+                    borderColor: 'rgba(255, 255, 255, 0.08)',
+                    borderWidth: 1,
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            }
+        }
+    });
+};
+
+window.teocuitlaRenderBarChart = (canvasId, labels, series, isStacked = false) => {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) {
+        setTimeout(() => window.teocuitlaRenderBarChart(canvasId, labels, series, isStacked), 100);
+        return;
+    }
+
+    destroyChartIfExists(canvasId);
+
+    const defaultColors = ['#8f44fd', '#10b981', '#ef4444', '#f59e0b', '#06b6d4'];
+
+    const datasets = series.map((s, idx) => ({
+        label: s.name,
+        data: s.data,
+        backgroundColor: s.color || defaultColors[idx % defaultColors.length],
+        borderRadius: 4
+    }));
+
+    teocuitlaChartInstances[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: labels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: '#a1a1aa', font: { family: "'Outfit', sans-serif", size: 12 }, usePointStyle: true }
+                },
+                tooltip: {
+                    backgroundColor: '#14141a',
+                    titleColor: '#ffffff',
+                    bodyColor: '#a1a1aa',
+                    borderColor: 'rgba(255, 255, 255, 0.08)',
+                    borderWidth: 1,
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            },
+            scales: {
+                x: {
+                    stacked: isStacked,
+                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                    ticks: { color: '#71717a', font: { family: "'Inter', sans-serif", size: 11 } }
+                },
+                y: {
+                    stacked: isStacked,
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: { color: '#71717a', font: { family: "'Inter', sans-serif", size: 11 } }
+                }
+            }
+        }
+    });
+};
+

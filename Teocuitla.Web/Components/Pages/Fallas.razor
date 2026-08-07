@@ -6,6 +6,8 @@
 @inject IDbContextFactory<TeocuitlaDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject IJSRuntime JS
+
 
 <PageTitle>Diagnóstico de Fallas - Teocuitla</PageTitle>
 
@@ -47,10 +49,10 @@
     }
     else
     {
-        <!-- RESUMEN DE ESTADO RÁPIDO -->
-        <MudGrid>
+        <!-- RESUMEN DE ESTADO RÁPIDO & GRÁFICO -->
+        <MudGrid Class="mb-2">
             <MudItem xs="12" sm="4">
-                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4" Style="background: var(--mud-palette-surface);">
+                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4 h-100" Style="background: var(--mud-palette-surface);">
                     <div class="rounded pa-3" style="background: rgba(244, 67, 54, 0.1);">
                         <MudIcon Icon="@Icons.Material.Filled.BugReport" Color="Color.Error" Size="Size.Large" />
                     </div>
@@ -61,7 +63,7 @@
                 </MudPaper>
             </MudItem>
             <MudItem xs="12" sm="4">
-                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4" Style="background: var(--mud-palette-surface);">
+                <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default d-flex align-center gap-4 h-100" Style="background: var(--mud-palette-surface);">
                     <div class="rounded pa-3" style="background: rgba(255, 152, 0, 0.1);">
                         <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Large" />
                     </div>
@@ -71,7 +73,16 @@
                     </div>
                 </MudPaper>
             </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default h-100" Style="background: var(--mud-palette-surface);">
+                    <MudText Typo="Typo.caption" Class="font-bold text-muted mb-1 d-block">Categorización de Errores</MudText>
+                    <div style="height: 110px; position: relative;">
+                        <canvas id="fallasCategorizacionChart"></canvas>
+                    </div>
+                </MudPaper>
+            </MudItem>
         </MudGrid>
+
 
         <!-- TABLA DE DETALLES -->
         <MudTable Items="@_fallasGrouped" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
@@ -288,6 +299,33 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await RenderCategorizacionChartAsync();
+    }
+
+    private async Task RenderCategorizacionChartAsync()
+    {
+        if (_fallasGrouped != null && _fallasGrouped.Any())
+        {
+            try
+            {
+                var selectores = _fallasGrouped.Count(f => (f.ErrorMensaje ?? "").Contains("Selector") || (f.ErrorMensaje ?? "").Contains("XPath") || (f.ErrorMensaje ?? "").Contains("no encontrado"));
+                var timeouts = _fallasGrouped.Count(f => (f.ErrorMensaje ?? "").Contains("Timeout") || (f.ErrorMensaje ?? "").Contains("net::") || (f.ErrorMensaje ?? "").Contains("connection"));
+                var antibot = _fallasGrouped.Count(f => (f.ErrorMensaje ?? "").Contains("Cloudflare") || (f.ErrorMensaje ?? "").Contains("Captcha") || (f.ErrorMensaje ?? "").Contains("403") || (f.ErrorMensaje ?? "").Contains("Blocked"));
+                var otros = _fallasGrouped.Count - selectores - timeouts - antibot;
+                if (otros < 0) otros = 0;
+
+                var labels = new[] { "Selectores Rotosa", "Timeouts/Red", "Anti-Bot/Captcha", "Otros Errores" };
+                var data = new double[] { selectores, timeouts, antibot, otros };
+                var colors = new[] { "#ef4444", "#f59e0b", "#8f44fd", "#64748b" };
+
+                await JS.InvokeVoidAsync("teocuitlaRenderDonutChart", "fallasCategorizacionChart", labels, data, colors);
+            }
+            catch { }
+        }
+    }
+
     private string CalcularHaceTiempo(DateTime fechaUtc)
     {
         var diff = DateTime.UtcNow - fechaUtc;
@@ -296,6 +334,7 @@
         if (diff.TotalMinutes >= 1) return $"{(int)diff.TotalMinutes} minuto(s)";
         return "segundos";
     }
+
 
     private async Task AbrirAyudaAsync()
     {

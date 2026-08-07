@@ -41,8 +41,17 @@ else if (_proxies.Count == 0)
 }
 else
 {
+    <!-- GRÁFICO DE SALUD Y LATENCIA DE PROXIES -->
+    <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default mb-4" Style="background: var(--mud-palette-surface);">
+        <MudText Typo="Typo.subtitle2" Class="font-bold mb-3" Style="font-family: 'Outfit', sans-serif;">Latencia de Respuesta por Proxy (ms)</MudText>
+        <div style="height: 180px; width: 100%; position: relative;">
+            <canvas id="proxyLatencyChart"></canvas>
+        </div>
+    </MudPaper>
+
     <!-- GRID DE TARJETAS / TABLA VIRTUALIZADA: Optimizado para Samsung Galaxy S24 Ultra -->
     <MudTable Items="@_proxies" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="true" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
+
         <HeaderContent>
             <MudTh>Dirección IP</MudTh>
             <MudTh>Puerto</MudTh>
@@ -238,7 +247,36 @@ else
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await RenderProxyChartAsync();
+    }
+
+    private async Task RenderProxyChartAsync()
+    {
+        if (_proxies != null && _proxies.Any())
+        {
+            try
+            {
+                var labels = _proxies.Select(p => p.Ip).ToArray();
+                var series = new object[]
+                {
+                    new
+                    {
+                        name = "Latencia (ms)",
+                        data = _proxies.Select(p => (double)p.LatenciaMs).ToArray(),
+                        color = "#10b981"
+                    }
+                };
+
+                await JS.InvokeVoidAsync("teocuitlaRenderBarChart", "proxyLatencyChart", labels, series, false);
+            }
+            catch { }
+        }
+    }
+
     private async Task AbrirAyudaAsync()
+
     {
         var htmlContent = @"
             <div class='d-flex flex-column gap-3 py-2'>

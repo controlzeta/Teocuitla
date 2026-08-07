@@ -8,54 +8,85 @@
       width: 360px;
       margin: 0;
       padding: 16px;
-      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: #000000;
-      color: #fafafa;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f111a 0%, #07080d 100%);
+      color: #f1f3f9;
+      box-sizing: border-box;
     }
     h2 {
       font-size: 18px;
-      margin: 0 0 12px 0;
-      color: #005dab;
-      border-bottom: 1px solid #222222;
-      padding-bottom: 8px;
+      font-weight: 700;
+      margin: 0 0 16px 0;
+      background: linear-gradient(90deg, #38bdf8 0%, #0284c7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .logo-badge {
       font-size: 10px;
-      background-color: #005dab;
-      color: #ffffff;
-      padding: 2px 6px;
-      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: #38bdf8;
+      padding: 2px 8px;
+      border-radius: 9999px;
       text-transform: uppercase;
-      font-weight: bold;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .reload-icon-btn {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 15px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .reload-icon-btn:hover {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      transform: rotate(180deg);
     }
     
     /* Tabs System */
     .tabs {
       display: flex;
-      border-bottom: 1px solid #222222;
-      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 16px;
+      gap: 4px;
     }
     .tab-btn {
       flex: 1;
       background: none;
       border: none;
-      padding: 8px;
-      color: #888888;
+      padding: 10px;
+      color: #7f8fa4;
       cursor: pointer;
       font-size: 13px;
-      font-weight: bold;
+      font-weight: 600;
       border-bottom: 2px solid transparent;
-      transition: all 0.2s;
+      transition: all 0.25s ease;
     }
     .tab-btn:hover {
-      color: #ffffff;
+      color: #f1f3f9;
+      background: rgba(255, 255, 255, 0.02);
     }
     .tab-btn.active {
-      color: #005dab;
-      border-bottom-color: #005dab;
+      color: #38bdf8;
+      border-bottom-color: #38bdf8;
     }
     .tab-content {
       display: none;
@@ -65,91 +96,105 @@
     }
 
     .form-group {
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
     label {
       display: block;
-      font-size: 12px;
-      margin-bottom: 4px;
-      color: #b0b0b0;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     input {
       width: 100%;
       box-sizing: border-box;
-      padding: 8px;
+      padding: 10px 12px;
       font-size: 13px;
-      background-color: #121212;
-      border: 1px solid #333333;
-      border-radius: 4px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
       color: #ffffff;
-      transition: border-color 0.2s;
+      transition: all 0.2s ease;
     }
     input:focus {
       outline: none;
-      border-color: #005dab;
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+      background-color: rgba(0, 0, 0, 0.4);
     }
     button.btn-primary {
       width: 100%;
-      padding: 10px;
+      padding: 11px;
       font-size: 13px;
-      font-weight: bold;
+      font-weight: 700;
       color: #ffffff;
-      background-color: #005dab;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      margin-top: 8px;
-      transition: background-color 0.2s;
+      margin-top: 10px;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
+      transition: all 0.25s ease;
     }
     button.btn-primary:hover {
-      background-color: #004580;
+      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+    }
+    button.btn-primary:active {
+      transform: translateY(0);
     }
     button.btn-secondary {
       width: 100%;
-      padding: 8px;
+      padding: 9px;
       font-size: 13px;
-      color: #fafafa;
-      background-color: #222222;
-      border: 1px solid #333333;
-      border-radius: 4px;
+      font-weight: 600;
+      color: #e2e8f0;
+      background-color: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
       cursor: pointer;
       margin-top: 8px;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
     button.btn-secondary:hover {
-      background-color: #333333;
+      background-color: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
     }
 
     /* Pending Variants List */
     .variant-list {
-      max-height: 260px;
+      max-height: 240px;
       overflow-y: auto;
-      border: 1px solid #222222;
-      border-radius: 4px;
-      background-color: #0d0d0d;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 6px;
+      background-color: rgba(0, 0, 0, 0.2);
       padding: 4px;
     }
     .variant-item {
       padding: 10px 8px;
-      border-bottom: 1px solid #1a1a1a;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: background-color 0.2s;
+      transition: all 0.2s ease;
+      border-radius: 4px;
     }
     .variant-item:hover {
-      background-color: #161616;
+      background-color: rgba(255, 255, 255, 0.03);
     }
     .variant-item:last-child {
       border-bottom: none;
     }
     .variant-info {
       flex: 1;
-      min-width: 0; /* Permite truncar texto con ellipsis */
+      min-width: 0;
       margin-right: 8px;
     }
     .variant-name {
-      font-weight: bold;
+      font-weight: 600;
       color: #ffffff;
       font-size: 12px;
       margin: 0 0 4px 0;
@@ -159,68 +204,79 @@
     }
     .variant-meta {
       font-size: 10px;
-      color: #888888;
+      color: #94a3b8;
       display: flex;
       gap: 8px;
+      align-items: center;
     }
     .badge-site {
-      background-color: #222222;
-      color: #005dab;
-      padding: 1px 4px;
-      border-radius: 3px;
-      font-weight: bold;
+      background-color: rgba(56, 189, 248, 0.1);
+      color: #38bdf8;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 9px;
+      text-transform: uppercase;
     }
     .variant-action-btn {
-      background-color: #005dab;
-      color: white;
-      border: none;
+      background-color: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
       padding: 4px 10px;
       border-radius: 4px;
       cursor: pointer;
       font-size: 11px;
-      font-weight: bold;
-      transition: background-color 0.2s;
+      font-weight: 700;
+      transition: all 0.2s ease;
     }
     .variant-action-btn:hover {
-      background-color: #004580;
+      background-color: #38bdf8;
+      color: #0f111a;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.2);
     }
     .no-variants {
       text-align: center;
       padding: 20px;
-      color: #888888;
+      color: #64748b;
       font-size: 12px;
     }
 
     .status-box {
-      margin-top: 14px;
-      padding: 8px;
-      background-color: #121212;
-      border: 1px solid #222222;
-      border-radius: 4px;
+      margin-top: 16px;
+      padding: 10px 12px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 6px;
       font-size: 12px;
-      min-height: 36px;
     }
     .status-title {
-      font-weight: bold;
-      margin-bottom: 2px;
-      color: #005dab;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #38bdf8;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
     }
     .status-msg {
-      color: #888888;
-      word-break: break-all;
+      color: #94a3b8;
+      word-break: break-word;
+      line-height: 1.4;
     }
     .status-success {
-      color: #4caf50;
+      color: #4ade80;
     }
     .status-error {
-      color: #f44336;
+      color: #f87171;
     }
   </style>
 </head>
 <body>
   <h2>
     Teocuitla Ingestor
-    <span class="logo-badge">v1.1</span>
+    <div class="header-actions">
+      <span class="logo-badge">v1.1</span>
+      <button id="btnReload" class="reload-icon-btn" title="Recargar Extensión">↻</button>
+    </div>
   </h2>
 
   <!-- Tabs Navigation -->
@@ -243,18 +299,21 @@
 
     <button id="btnSave" class="btn-primary">Guardar Configuración</button>
     <button id="btnExtract" class="btn-secondary">Forzar Extracción Manual</button>
-    <button id="btnReload" class="btn-secondary" style="background-color: #2a1111; border-color: #4a1f1f; color: #ff8888;">Recargar Extensión ↻</button>
   </div>
 
   <!-- Content: Pending Products -->
   <div id="pendingContent" class="tab-content">
-    <label>Últimos productos ordenados por desactualizados:</label>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <label style="margin: 0;">Productos desactualizados:</label>
+      <span id="pendingBadge" title="Total de productos pendientes por actualizar" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">0</span>
+    </div>
     <div id="variantList" class="variant-list">
       <div class="no-variants">Cargando productos pendientes...</div>
     </div>
-    <div style="display: flex; gap: 8px; margin-top: 8px;">
-      <button id="btnRefresh" class="btn-secondary" style="flex: 1; margin: 0;">Refrescar</button>
-      <button id="btnOpenAll" class="btn-primary" style="flex: 2; margin: 0; background-color: #005dab; color: white;">Abrir Todos</button>
+    <div style="display: flex; gap: 6px; margin-top: 10px;">
+      <button id="btnRefresh" class="btn-secondary" style="flex: 1; margin: 0; padding: 8px 4px; font-size: 11px;">Refrescar</button>
+      <button id="btnCleanDuplicates" class="btn-secondary" style="flex: 1.2; margin: 0; padding: 8px 4px; font-size: 11px; color: #f87171; border-color: rgba(248, 113, 113, 0.3);">Borrar Duplicados</button>
+      <button id="btnOpenAll" class="btn-primary" style="flex: 1.8; margin: 0; padding: 8px 4px; font-size: 11px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);">Abrir Todos</button>
     </div>
   </div>
 

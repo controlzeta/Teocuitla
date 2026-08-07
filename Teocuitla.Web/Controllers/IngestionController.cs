@@ -195,6 +195,7 @@ namespace Teocuitla.Web.Controllers
 
             dto.Sku = DataNormalizer.NormalizeSku(dto.Sku);
             dto.Marca = DataNormalizer.NormalizeBrand(dto.Marca);
+            dto.UrlProducto = DataNormalizer.CleanProductUrl(dto.UrlProducto);
             dto.ImagenUrl = DataNormalizer.NormalizeImageUrl(DataNormalizer.MakeAbsoluteUrl(dto.ImagenUrl, dto.UrlProducto));
 
             _logger.LogInformation("Recibiendo ingesta de producto desde extensión: SKU={Sku}, Dominio={Dominio}", dto.Sku, dto.Dominio);
@@ -241,11 +242,32 @@ namespace Teocuitla.Web.Controllers
                         _logger.LogInformation("Selectores corregidos/actualizados automáticamente para el sitio {Nombre} desde la extensión.", site.Nombre);
                     }
 
-                    // 2. Buscar variante comercial existente por SKU y Sitio
-                    var variant = await _context.VariantesComerciales
-                        .Where(v => v.Sku == dto.Sku && v.CatalogoSitioId == site.Id)
-                        .OrderBy(v => v.Id)
-                        .FirstOrDefaultAsync();
+                    // 2. Buscar variante comercial existente por URL limpia, SKU o coincidencia de URL
+                    var cleanDtoUrl = DataNormalizer.CleanProductUrl(dto.UrlProducto);
+                    var cleanDtoSku = DataNormalizer.NormalizeSku(dto.Sku);
+
+                    var allVariantsInSite = await _context.VariantesComerciales
+                        .Where(v => v.CatalogoSitioId == site.Id || v.CatalogoSitioId == null)
+                        .ToListAsync();
+
+                    var matchingVariants = allVariantsInSite.Where(v => 
+                        (!string.IsNullOrEmpty(v.UrlProducto) && DataNormalizer.CleanProductUrl(v.UrlProducto).Equals(cleanDtoUrl, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrEmpty(v.Sku) && (
+                            v.Sku.Equals(cleanDtoSku, StringComparison.OrdinalIgnoreCase) ||
+                            (cleanDtoSku.Length >= 4 && v.Sku.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
+                            (v.Sku.Length >= 4 && cleanDtoSku.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
+                        )) ||
+                        (!string.IsNullOrEmpty(v.UrlProducto) && (
+                            (!string.IsNullOrEmpty(cleanDtoSku) && cleanDtoSku.Length >= 4 && v.UrlProducto.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrEmpty(v.Sku) && v.Sku.Length >= 4 && cleanDtoUrl.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
+                        ))
+                    ).ToList();
+
+                    var variant = matchingVariants
+                        .OrderByDescending(v => v.UltimaActualizacion.HasValue)
+                        .ThenByDescending(v => v.UltimaActualizacion)
+                        .ThenBy(v => v.Id)
+                        .FirstOrDefault();
 
                     bool priceChanged = false;
 
@@ -253,17 +275,21 @@ namespace Teocuitla.Web.Controllers
                     {
                         priceChanged = variant.PrecioActual != dto.Precio || variant.EnStock != (dto.Precio > 0);
 
-                        // Actualizar variante
-                        variant.PrecioAnterior = variant.PrecioActual;
-                        variant.PrecioActual = dto.Precio;
-                        variant.EnStock = dto.Precio > 0;
-                        variant.UltimaActualizacion = DateTime.Now;
-                        if (!string.IsNullOrEmpty(dto.ImagenUrl))
+                        // Actualizar fecha y datos en todas las variantes coincidentes registradas para quitar de pendientes
+                        foreach (var mVar in matchingVariants)
                         {
-                            variant.ImagenUrl = dto.ImagenUrl;
+                            mVar.PrecioAnterior = mVar.PrecioActual;
+                            mVar.PrecioActual = dto.Precio;
+                            mVar.EnStock = dto.Precio > 0;
+                            mVar.UltimaActualizacion = DateTime.Now;
+                            mVar.UrlProducto = cleanDtoUrl;
+                            if (!string.IsNullOrEmpty(dto.ImagenUrl))
+                            {
+                                mVar.ImagenUrl = dto.ImagenUrl;
+                            }
+                            _context.VariantesComerciales.Update(mVar);
                         }
-                        
-                        _context.VariantesComerciales.Update(variant);
+
                         await _context.SaveChangesAsync();
                     }
                     else
@@ -297,7 +323,7 @@ namespace Teocuitla.Web.Controllers
                             CatalogoSitioId = site.Id,
                             Sku = dto.Sku,
                             Nombre = dto.Nombre,
-                            UrlProducto = dto.UrlProducto,
+                            UrlProducto = cleanDtoUrl,
                             PrecioActual = dto.Precio,
                             EnStock = dto.Precio > 0,
                             UltimaActualizacion = DateTime.Now,
@@ -396,7 +422,16 @@ namespace Teocuitla.Web.Controllers
             {
                 var today = DateTime.Today;
                 var now = DateTime.Now;
-                var variants = await _context.VariantesComerciales
+
+                var totalPending = await _context.VariantesComerciales
+                    .Include(v => v.CatalogoSitio)
+                    .Where(v => v.UltimaActualizacion == null || 
+                                (v.UltimaActualizacion < today && 
+                                 v.CatalogoSitio != null && 
+                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos)))
+                    .CountAsync();
+
+                var rawVariants = await _context.VariantesComerciales
                     .Include(v => v.CatalogoSitio)
                     .Where(v => v.UltimaActualizacion == null || 
                                 (v.UltimaActualizacion < today && 
@@ -412,13 +447,93 @@ namespace Teocuitla.Web.Controllers
                         SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda"
                     })
                     .OrderBy(v => v.UltimaActualizacion)
-                    .Take(50)
+                    .Take(150)
                     .ToListAsync();
-                return Ok(variants);
+
+                // Filtrar variantes con URLs duplicadas usando CleanProductUrl para retornar únicamente URLs únicas
+                var variants = rawVariants
+                    .Where(v => !string.IsNullOrWhiteSpace(v.UrlProducto))
+                    .GroupBy(v => DataNormalizer.CleanProductUrl(v.UrlProducto).ToLower())
+                    .Select(g => g.First())
+                    .Take(50)
+                    .ToList();
+
+                return Ok(new { Total = totalPending, Variants = variants });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al obtener la lista de variantes para la extensión.");
+                return StatusCode(500, $"Error interno: {ex.Message}");
+            }
+        }
+
+        [HttpPost("clean-duplicates")]
+        [HttpDelete("duplicates")]
+        public async Task<IActionResult> CleanDuplicates()
+        {
+            // 1. Validar la API Key
+            if (!Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey))
+            {
+                return Unauthorized("API Key no proporcionada.");
+            }
+
+            var configuredApiKey = _configuration["Scraping:ApiKey"] ?? "TeocuitlaDefaultApiKeySecret";
+            if (extractedApiKey != configuredApiKey)
+            {
+                return Unauthorized("API Key inválida.");
+            }
+
+            try
+            {
+                var allVariants = await _context.VariantesComerciales
+                    .Where(v => v.UrlProducto != null && v.UrlProducto != "")
+                    .ToListAsync();
+
+                var duplicatesGrouped = allVariants
+                    .GroupBy(v => DataNormalizer.CleanProductUrl(v.UrlProducto).ToLower())
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                int removedCount = 0;
+
+                foreach (var group in duplicatesGrouped)
+                {
+                    // Seleccionar la variante principal (la que tenga fecha más reciente o menor Id)
+                    var primaryVariant = group
+                        .OrderByDescending(v => v.UltimaActualizacion.HasValue)
+                        .ThenByDescending(v => v.UltimaActualizacion)
+                        .ThenBy(v => v.Id)
+                        .First();
+
+                    var duplicates = group.Where(v => v.Id != primaryVariant.Id).ToList();
+
+                    foreach (var dup in duplicates)
+                    {
+                        // Reasignar el historial de precios al registro principal
+                        var histories = await _context.HistorialPrecios
+                            .Where(h => h.VarianteComercialId == dup.Id)
+                            .ToListAsync();
+                        foreach (var h in histories)
+                        {
+                            h.VarianteComercialId = primaryVariant.Id;
+                        }
+
+                        _context.VariantesComerciales.Remove(dup);
+                        removedCount++;
+                    }
+                }
+
+                if (removedCount > 0)
+                {
+                    await _context.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("Limpieza de duplicados completada. Se eliminaron {RemovedCount} registros repetidos.", removedCount);
+                return Ok(new { Message = $"Se eliminaron {removedCount} variantes duplicadas.", RemovedCount = removedCount });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al limpiar variantes duplicadas.");
                 return StatusCode(500, $"Error interno: {ex.Message}");
             }
         }

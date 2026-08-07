@@ -78,6 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  const btnCleanDuplicates = document.getElementById('btnCleanDuplicates');
+
   // 3.5. Recargar Extensión
   if (btnReload) {
     btnReload.addEventListener('click', () => {
@@ -90,23 +92,77 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPendingVariants();
   });
 
-  // 5. Abrir todos los enlaces cargados de una vez (en segundo plano)
+  // 4.5. Borrar duplicados en la base de datos
+  if (btnCleanDuplicates) {
+    btnCleanDuplicates.addEventListener('click', () => {
+      updateStatus('Limpiando productos duplicados en el servidor...', '');
+
+      chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+        const apiUrl = config.apiUrl || 'https://localhost:7192';
+        const apiKey = config.apiKey || 'TeocuitlaDefaultApiKeySecret';
+
+        if (!apiUrl || !apiKey) {
+          updateStatus('Configura la URL del Servidor y API Key.', 'error');
+          return;
+        }
+
+        const endpoint = `${apiUrl.replace(/\/$/, '')}/api/ingestion/clean-duplicates`;
+
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'X-Api-Key': apiKey
+          }
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Código ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          updateStatus(data.message || 'Duplicados eliminados exitosamente.', 'success');
+          loadPendingVariants();
+        })
+        .catch(err => {
+          updateStatus(`Error al eliminar duplicados: ${err.message}`, 'error');
+        });
+      });
+    });
+  }
+
+  // 5. Abrir todos los enlaces cargados de una vez (deduplicando URLs y en segundo plano)
   btnOpenAll.addEventListener('click', () => {
     if (!loadedVariants || loadedVariants.length === 0) {
       updateStatus('No hay productos pendientes para abrir.', 'error');
       return;
     }
 
-    let openedCount = 0;
+    const seenUrls = new Set();
+    const uniqueVariants = [];
+
     loadedVariants.forEach(variant => {
       if (variant.urlProducto) {
-        // active: false abre la pestaña en segundo plano para no interrumpir al usuario
-        chrome.tabs.create({ url: variant.urlProducto, active: false });
-        openedCount++;
+        const cleanUrl = variant.urlProducto.trim().toLowerCase();
+        if (!seenUrls.has(cleanUrl)) {
+          seenUrls.add(cleanUrl);
+          uniqueVariants.push(variant);
+        }
       }
     });
 
-    updateStatus(`Abiertas ${openedCount} pestañas en segundo plano con éxito.`, 'success');
+    if (uniqueVariants.length === 0) {
+      updateStatus('No hay productos con URL válida para abrir.', 'error');
+      return;
+    }
+
+    let openedCount = 0;
+    uniqueVariants.forEach(variant => {
+      chrome.tabs.create({ url: variant.urlProducto, active: false });
+      openedCount++;
+    });
+
+    updateStatus(`Abiertas ${openedCount} pestañas únicas en segundo plano con éxito.`, 'success');
   });
 
   // 6. Escuchar estatus enviado por background.js
@@ -114,13 +170,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (message.action === 'ingestStatus') {
       if (message.success) {
         updateStatus(message.message, 'success');
-        // Si está en la pestaña de pendientes, recargar la lista
+        // Si está en la pestaña de pendientes, recargar la lista inmediatamente
         if (pendingContent.classList.contains('active')) {
-          setTimeout(loadPendingVariants, 1500); // Dar un margen para que se complete el registro
+          loadPendingVariants();
         }
       } else {
         updateStatus(`Fallo de ingesta: ${message.message}`, 'error');
       }
+    }
+  });
+
+  // Recargar la lista de pendientes automáticamente cuando el popup toma foco
+  window.addEventListener('focus', () => {
+    if (pendingContent.classList.contains('active')) {
+      loadPendingVariants();
     }
   });
 
@@ -162,8 +225,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return response.json();
       })
-      .then(variants => {
+      .then(data => {
+        let variants = [];
+        let totalCount = 0;
+
+        if (Array.isArray(data)) {
+          variants = data;
+          totalCount = data.length;
+        } else if (data && data.variants) {
+          variants = data.variants;
+          totalCount = data.total !== undefined ? data.total : data.variants.length;
+        }
+
         loadedVariants = variants; // Guardar referencia global
+
+        const pendingBadge = document.getElementById('pendingBadge');
+        if (pendingBadge) {
+          pendingBadge.innerText = totalCount;
+        }
+
         renderVariants(variants);
       })
       .catch(error => {

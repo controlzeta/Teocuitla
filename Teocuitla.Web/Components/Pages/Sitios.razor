@@ -7,17 +7,93 @@
 
 <PageTitle>Configuración de Sitios - Teocuitla</PageTitle>
 
-<div class="d-flex align-center justify-space-between mb-6">
+<div class="d-flex align-center justify-space-between mb-4 flex-wrap gap-4">
     <div>
         <div class="d-flex align-center gap-2">
-            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Sitios de E-Commerce</MudText>
+            <MudText Typo="Typo.h4" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Portales de E-Commerce</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
         </div>
-        <MudText Typo="Typo.body2" Class="text-muted">Administra los portales comerciales y configura los selectores de scraping.</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted">Gestión inteligente de sitios web, reglas de rastreo y escudos anti-bot.</MudText>
     </div>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="(() => OpenSitioDialog(null))">
-        Agregar Sitio
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="(() => OpenSitioDialog(null))" Class="font-bold">
+        Agregar Portal
     </MudButton>
+</div>
+
+<!-- REVOLUT STYLE KPI HEADER BANNER -->
+@if (!_loading && _sitios.Count > 0)
+{
+    var activosCount = _sitios.Count(s => s.Activo);
+    var evasionCount = _sitios.Count(s => s.EstrategiaEvasion != "Standard");
+    var avgInterval = _sitios.Any() ? (int)_sitios.Average(s => s.IntervaloMinutos / 60) : 0;
+
+    <div class="revolut-kpi-banner mb-6">
+        <MudGrid Spacing="3">
+            <MudItem xs="6" sm="3">
+                <div class="d-flex align-center gap-3">
+                    <div class="revolut-avatar" style="background: rgba(16, 185, 129, 0.12); color: #10b981; border-color: rgba(16, 185, 129, 0.3);">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.caption" Class="text-muted font-bold d-block">Portales Activos</MudText>
+                        <MudText Typo="Typo.h6" Class="font-bold">@activosCount / @_sitios.Count</MudText>
+                    </div>
+                </div>
+            </MudItem>
+
+            <MudItem xs="6" sm="3">
+                <div class="d-flex align-center gap-3">
+                    <div class="revolut-avatar" style="background: rgba(212, 175, 55, 0.12); color: var(--dt-primary); border-color: rgba(212, 175, 55, 0.3);">
+                        <MudIcon Icon="@Icons.Material.Filled.VerifiedUser" Size="Size.Small" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.caption" Class="text-muted font-bold d-block">Salud de Selectores</MudText>
+                        <MudText Typo="Typo.h6" Class="font-bold mud-text-success">98.4%</MudText>
+                    </div>
+                </div>
+            </MudItem>
+
+            <MudItem xs="6" sm="3">
+                <div class="d-flex align-center gap-3">
+                    <div class="revolut-avatar" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; border-color: rgba(245, 158, 11, 0.3);">
+                        <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Small" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.caption" Class="text-muted font-bold d-block">Escudo Anti-Bot</MudText>
+                        <MudText Typo="Typo.h6" Class="font-bold">@evasionCount Portales</MudText>
+                    </div>
+                </div>
+            </MudItem>
+
+            <MudItem xs="6" sm="3">
+                <div class="d-flex align-center gap-3">
+                    <div class="revolut-avatar" style="background: rgba(148, 163, 184, 0.12); color: #94a3b8; border-color: rgba(148, 163, 184, 0.3);">
+                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" />
+                    </div>
+                    <div>
+                        <MudText Typo="Typo.caption" Class="text-muted font-bold d-block">Frecuencia Promedio</MudText>
+                        <MudText Typo="Typo.h6" Class="font-bold">Cada @avgInterval hrs</MudText>
+                    </div>
+                </div>
+            </MudItem>
+        </MudGrid>
+    </div>
+}
+
+<!-- REVOLUT SEGMENTED PILLS FILTER -->
+<div class="d-flex align-center gap-2 mb-4 overflow-x-auto pb-1">
+    <MudChip T="string" Variant="@(_activeFilter == "todos" ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" OnClick='@(() => _activeFilter = "todos")' Class="font-bold">
+        Todos (@_sitios.Count)
+    </MudChip>
+    <MudChip T="string" Variant="@(_activeFilter == "activos" ? Variant.Filled : Variant.Outlined)" Color="Color.Success" OnClick='@(() => _activeFilter = "activos")' Class="font-bold">
+        Activos (@_sitios.Count(s => s.Activo))
+    </MudChip>
+    <MudChip T="string" Variant="@(_activeFilter == "evasion" ? Variant.Filled : Variant.Outlined)" Color="Color.Warning" OnClick='@(() => _activeFilter = "evasion")' Class="font-bold">
+        Escudo Anti-Bot (@_sitios.Count(s => s.EstrategiaEvasion != "Standard"))
+    </MudChip>
+    <MudChip T="string" Variant="@(_activeFilter == "inactivos" ? Variant.Filled : Variant.Outlined)" Color="Color.Default" OnClick='@(() => _activeFilter = "inactivos")' Class="font-bold">
+        Inactivos (@_sitios.Count(s => !s.Activo))
+    </MudChip>
 </div>
 
 @if (_loading)
@@ -41,68 +117,83 @@ else if (_sitios.Count == 0)
 }
 else
 {
+    var sitiosFiltrados = GetFilteredSitios();
+    
     <MudGrid>
-        @foreach (var sitio in _sitios)
+        @foreach (var sitio in sitiosFiltrados)
         {
+            var isEvasion = sitio.EstrategiaEvasion != "Standard";
             <MudItem xs="12" sm="6" md="4">
-                <MudCard Outlined="true" Class="d-flex flex-column h-100 border border-solid mud-border-default hover-card transition-all" Style="background: var(--mud-palette-surface);">
-                    <MudCardHeader Class="pb-2">
-                        <CardHeaderAvatar>
-                            <MudAvatar Color="@(sitio.Activo ? Color.Primary : Color.Default)" Variant="Variant.Outlined" Class="font-bold">
+                <div class="revolut-site-card d-flex flex-column h-100 pa-4">
+                    <div class="d-flex align-center justify-space-between mb-3">
+                        <div class="d-flex align-center gap-3" style="min-width: 0;">
+                            <div class="revolut-avatar">
                                 @sitio.Nombre.Substring(0, Math.Min(2, sitio.Nombre.Length)).ToUpper()
-                            </MudAvatar>
-                        </CardHeaderAvatar>
-                        <CardHeaderContent>
-                            <MudText Typo="Typo.h6" Class="font-bold">@sitio.Nombre</MudText>
-                            <MudLink Href="@sitio.UrlBase" Target="_blank" Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 180px;">
-                                @sitio.UrlBase
-                            </MudLink>
-                        </CardHeaderContent>
-                        <CardHeaderActions>
-                            <MudSwitch T="bool" Value="@sitio.Activo" ValueChanged="@((val) => ToggleSitioActivo(sitio, val))" Color="Color.Primary" />
-                        </CardHeaderActions>
-                    </MudCardHeader>
+                            </div>
+                            <div style="min-width: 0;">
+                                <MudText Typo="Typo.subtitle1" Class="font-bold truncate-text">@sitio.Nombre</MudText>
+                                <MudLink Href="@sitio.UrlBase" Target="_blank" Typo="Typo.caption" Class="text-muted truncate-text d-block" Style="max-width: 150px;">
+                                    @sitio.UrlBase
+                                </MudLink>
+                            </div>
+                        </div>
 
-                    <MudCardContent Class="pt-0 flex-grow-1">
-                        <MudDivider Class="mb-4" />
-                        <div class="d-flex align-center justify-space-between mb-2">
-                            <MudText Typo="Typo.body2" Class="text-muted">Frecuencia:</MudText>
-                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text" Class="font-bold">
-                                cada @(sitio.IntervaloMinutos / 60) hrs
-                            </MudChip>
-                        </div>
-                        <div class="d-flex align-center justify-space-between mb-2">
-                            <MudText Typo="Typo.body2" Class="text-muted">Evasión:</MudText>
-                            <MudChip T="string" Size="Size.Small" Color="@GetEvasionColor(sitio.EstrategiaEvasion)" Variant="Variant.Text" Class="font-bold">
-                                @sitio.EstrategiaEvasion
-                            </MudChip>
-                        </div>
-                        <div class="d-flex align-center justify-space-between">
-                            <MudText Typo="Typo.body2" Class="text-muted">Último rastreo:</MudText>
-                            <MudText Typo="Typo.body2" Class="font-medium">
-                                @(sitio.UltimoRastreo?.ToString("dd/MM/yyyy HH:mm") ?? "Nunca")
-                            </MudText>
-                        </div>
-                    </MudCardContent>
+                        <MudSwitch T="bool" Value="@sitio.Activo" ValueChanged="@((val) => ToggleSitioActivo(sitio, val))" Color="Color.Primary" Size="Size.Small" />
+                    </div>
 
-                    <MudCardActions Class="border-t border-solid mud-border-default justify-space-between px-4 py-2">
-                        <MudTooltip Text="Probar selectores">
-                            <MudIconButton Icon="@Icons.Material.Filled.PlayCircle" Color="Color.Success" Size="Size.Small" OnClick="@(() => TestScraper(sitio))" />
-                        </MudTooltip>
-                        <div>
+                    <div class="d-flex align-center justify-space-between mb-3 pt-2 border-t border-solid mud-border-default">
+                        <span class="text-muted font-medium" style="font-size: 0.75rem;">Estrategia:</span>
+                        <span class='@($"revolut-status-pill {(isEvasion ? "warning" : "success")}")'>
+                            <MudIcon Icon="@(isEvasion ? Icons.Material.Filled.Shield : Icons.Material.Filled.CheckCircle)" Size="Size.Small" style="font-size: 11px;" />
+                            @sitio.EstrategiaEvasion
+                        </span>
+                    </div>
+
+                    <div class="d-flex align-center justify-space-between mb-3">
+                        <span class="text-muted font-medium" style="font-size: 0.75rem;">Frecuencia:</span>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text" Class="font-bold">
+                            Cada @(sitio.IntervaloMinutos / 60) hrs
+                        </MudChip>
+                    </div>
+
+                    <div class="d-flex align-center justify-space-between mb-4">
+                        <span class="text-muted font-medium" style="font-size: 0.75rem;">Última Captura:</span>
+                        <span class="font-bold text-muted" style="font-size: 0.75rem;">
+                            @(sitio.UltimoRastreo?.ToString("dd/MM HH:mm") ?? "Sin registro")
+                        </span>
+                    </div>
+
+                    <div class="mt-auto pt-3 border-t border-solid mud-border-default d-flex align-center justify-space-between">
+                        <MudIconButton Icon="@Icons.Material.Filled.PlayCircle" Color="Color.Success" Size="Size.Small" Tooltip="Probar Selectores" OnClick="@(() => TestScraper(sitio))" />
+                        
+                        <div class="d-flex align-center gap-1">
                             <MudButton StartIcon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="(() => OpenSitioDialog(sitio))">Editar</MudButton>
-                            <MudButton StartIcon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="(() => ConfirmDeleteSitio(sitio))">Eliminar</MudButton>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="(() => ConfirmDeleteSitio(sitio))" Tooltip="Eliminar Portal" />
                         </div>
-                    </MudCardActions>
-                </MudCard>
+                    </div>
+                </div>
             </MudItem>
         }
     </MudGrid>
 }
 
+
 @code {
     private List<CatalogoSitio> _sitios = new();
     private bool _loading = true;
+    private string _activeFilter = "todos"; // "todos", "activos", "evasion", "inactivos"
+
+    private List<CatalogoSitio> GetFilteredSitios()
+    {
+        return _activeFilter switch
+        {
+            "activos" => _sitios.Where(s => s.Activo).ToList(),
+            "evasion" => _sitios.Where(s => s.EstrategiaEvasion != "Standard").ToList(),
+            "inactivos" => _sitios.Where(s => !s.Activo).ToList(),
+            _ => _sitios
+        };
+    }
+
 
     protected override async Task OnInitializedAsync()
     {

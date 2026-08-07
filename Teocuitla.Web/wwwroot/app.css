@@ -1,14 +1,14 @@
 :root {
-    /* --- Fondos en Capas (Chromatic Dark) --- */
-    --dt-bg-base: #08080a;        /* Fondo base de la aplicación */
-    --dt-bg-surface-0: #0d0d11;   /* Tarjetas, contenedores principales */
-    --dt-bg-surface-1: #14141a;   /* Elementos elevados, inputs, modales */
-    --dt-bg-surface-2: #1c1c24;   /* Estados hover de botones, bordes activos */
-    --dt-bg-header: rgba(13, 13, 17, 0.75); /* Cabecera translúcida con blur */
+    /* --- Fondos en Capas (Obsidian Dark) --- */
+    --dt-bg-base: #0b0c0e;        /* Fondo base de la aplicación */
+    --dt-bg-surface-0: #121418;   /* Tarjetas, contenedores principales */
+    --dt-bg-surface-1: #181b20;   /* Elementos elevados, inputs, modales */
+    --dt-bg-surface-2: #22262d;   /* Estados hover de botones, bordes activos */
+    --dt-bg-header: rgba(18, 20, 24, 0.85); /* Cabecera translúcida con blur */
 
-    /* --- Acentos de Luz (Glow & Accents) --- */
-    --dt-primary: #8f44fd;        /* Morado Tech Premium */
-    --dt-primary-glow: rgba(143, 68, 253, 0.15);
+    /* --- Acentos de Luz (Glow & Accents - Champagne Gold) --- */
+    --dt-primary: #d4af37;        /* Oro Champán Teocuitla */
+    --dt-primary-glow: rgba(212, 175, 55, 0.15);
     
     --dt-success: #10b981;        /* Esmeralda */
     --dt-success-glow: rgba(16, 185, 129, 0.12);
@@ -16,12 +16,13 @@
     --dt-warning: #f59e0b;        /* Ámbar */
     --dt-warning-glow: rgba(245, 158, 11, 0.12);
     
-    --dt-error: #ef4444;          /* Carmín */
-    --dt-error-glow: rgba(239, 68, 68, 0.12);
+    --dt-error: #e11d48;          /* Carmín */
+    --dt-error-glow: rgba(225, 29, 72, 0.12);
 
     /* --- Bordes y Sombras Sutiles --- */
-    --dt-border-sutil: rgba(255, 255, 255, 0.05);
-    --dt-border-glow: rgba(143, 68, 253, 0.2);
+    --dt-border-sutil: rgba(255, 255, 255, 0.07);
+    --dt-border-glow: rgba(212, 175, 55, 0.25);
+
     
     /* --- Tipografía --- */
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -128,4 +129,184 @@ body {
     100% {
         background-position: -200% 0;
     }
+}
+
+/* --- Cards de Analítica & Hover Effects --- */
+.dashboard-card-clickable {
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-card-clickable:hover {
+    transform: translateY(-2px);
+    border-color: rgba(212, 175, 55, 0.4) !important;
+    box-shadow: 0 4px 20px rgba(212, 175, 55, 0.12) !important;
+}
+
+.dashboard-card-clickable-error {
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-card-clickable-error:hover {
+    transform: translateY(-2px);
+    border-color: rgba(225, 29, 72, 0.5) !important;
+    box-shadow: 0 4px 20px rgba(225, 29, 72, 0.15) !important;
+}
+
+/* --- Truncamiento de Texto --- */
+.truncate-container {
+    overflow: hidden;
+}
+
+.truncate-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Badges de Oferta y Mínimo Histórico --- */
+.badge-min-historico {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2));
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #10b981;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* --- KPI Summary Metric Pill --- */
+.kpi-delta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.kpi-delta-pill.positive {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.kpi-delta-pill.negative {
+    background: rgba(225, 29, 72, 0.15);
+    color: #e11d48;
+}
+
+.kpi-delta-pill.neutral {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+}
+
+/* Container de Gráfica */
+.analytics-chart-container {
+    position: relative;
+    width: 100%;
+    border-radius: 8px;
+}
+
+/* --- Rediseño de Catálogo: Category Chips & Grid Cards --- */
+.category-chips-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+}
+
+.category-chips-scroll::-webkit-scrollbar {
+    height: 4px;
+}
+
+.category-chip-item {
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.product-grid-card {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+}
+
+.product-grid-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(212, 175, 55, 0.5) !important;
+    box-shadow: 0 8px 24px rgba(212, 175, 55, 0.12) !important;
+}
+
+.selected-product-item {
+    background: rgba(212, 175, 55, 0.1) !important;
+    border-left: 3px solid var(--dt-primary) !important;
+}
+
+/* --- Revolut Banking Style UI Components --- */
+.revolut-kpi-banner {
+    background: linear-gradient(135deg, rgba(18, 20, 24, 0.95) 0%, rgba(24, 27, 32, 0.95) 100%);
+    border: 1px solid var(--dt-border-sutil);
+    border-radius: 12px;
+    padding: 16px 20px;
+}
+
+.revolut-site-card {
+    background: var(--dt-bg-surface-0);
+    border: 1px solid var(--dt-border-sutil);
+    border-radius: 12px;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.revolut-site-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(212, 175, 55, 0.4) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+}
+
+.revolut-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    color: var(--dt-primary);
+    flex-shrink: 0;
+}
+
+.revolut-status-pill {
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.revolut-status-pill.success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.revolut-status-pill.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.revolut-status-pill.danger {
+    background: rgba(225, 29, 72, 0.15);
+    color: #e11d48;
+    border: 1px solid rgba(225, 29, 72, 0.3);
 }

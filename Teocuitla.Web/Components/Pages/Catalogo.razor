@@ -60,54 +60,89 @@
     </MudPaper>
 }
 
-<MudGrid>
-    <!-- LISTA DE PRODUCTOS: Se oculta en móviles si hay un producto seleccionado para optimizar espacio (Mobile-First) -->
-    <MudItem xs="12" md="5" Class="@(_showDetails ? "mobile-hide-list" : "d-block")">
-        <div class="d-flex align-center justify-space-between mb-4">
-            <div>
-                <div class="d-flex align-center gap-2">
-                    <MudText Typo="Typo.h5" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">Catálogo</MudText>
-                    <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" OnClick="AbrirAyudaAsync" Tooltip="Ayuda de la pantalla" />
-                </div>
-                <MudText Typo="Typo.caption" Class="text-muted">Lista general de productos monitoreados.</MudText>
-            </div>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="OpenAddProductoDialog">
-                Nuevo
-            </MudButton>
+<!-- NAVEGACIÓN POR CATEGORÍAS (CATEGORY CHIPS BAR) -->
+<div class="mb-4">
+    <div class="d-flex align-center justify-space-between mb-2">
+        <MudText Typo="Typo.caption" Class="text-muted font-bold d-block">Explorar por Categoría</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="OpenAddProductoDialog">
+            Nuevo Producto
+        </MudButton>
+    </div>
+    <div class="category-chips-scroll">
+        <MudChip T="string" 
+                 Variant="@(string.IsNullOrEmpty(_selectedCategoria) ? Variant.Filled : Variant.Outlined)" 
+                 Color="Color.Primary" 
+                 OnClick="@(() => OnCategoriaFilterChanged(null))" 
+                 Class="category-chip-item font-bold">
+            Todas (@_productos.Count)
+        </MudChip>
+        @foreach (var cat in _categorias)
+        {
+            var isSel = _selectedCategoria == cat;
+            var count = _categoriaCounts.GetValueOrDefault(cat, 0);
+            <MudChip T="string" 
+                     Variant="@(isSel ? Variant.Filled : Variant.Outlined)" 
+                     Color="Color.Primary" 
+                     OnClick="@(() => OnCategoriaFilterChanged(cat))" 
+                     Class="category-chip-item font-bold">
+                @cat (@count)
+            </MudChip>
+        }
+    </div>
+</div>
+
+<!-- BARRA DE HERRAMIENTAS DE FILTROS, ORDENAMIENTO Y VISTAS -->
+<MudPaper Outlined="true" Class="pa-3 border border-solid mud-border-default mb-4" Style="background: var(--mud-palette-surface);">
+    <div class="d-flex align-center justify-space-between flex-wrap gap-3">
+        <div class="d-flex align-center gap-2 flex-grow-1" style="min-width: 260px;">
+            <MudTextField Value="_searchQuery" 
+                          Placeholder="Buscar producto, marca o categoría..." 
+                          Adornment="Adornment.Start" 
+                          AdornmentIcon="@Icons.Material.Filled.Search" 
+                          Immediate="true"
+                          ValueChanged="@(async (string s) => await OnSearchChanged(s))"
+                          Variant="Variant.Outlined" 
+                          Margin="Margin.Dense" 
+                          Class="flex-grow-1" />
         </div>
+        
+        <div class="d-flex align-center gap-2 flex-wrap">
+            <MudSelect T="int?" Value="_selectedSitioId" ValueChanged="OnSitioFilterChanged" Label="Tienda" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas" Style="min-width: 130px;">
+                @foreach (var s in _sitios)
+                {
+                    var count = _sitioCounts.GetValueOrDefault(s.Id, 0);
+                    <MudSelectItem Value="@((int?)s.Id)">@($"{s.Nombre} ({count})")</MudSelectItem>
+                }
+            </MudSelect>
 
-        <!-- Buscador y Filtros -->
-        <MudGrid Class="mb-3" Spacing="2">
-            <MudItem xs="12">
-                <MudTextField Value="_searchQuery" 
-                              Placeholder="Buscar producto o marca..." 
-                              Adornment="Adornment.Start" 
-                              AdornmentIcon="@Icons.Material.Filled.Search" 
-                              Immediate="true"
-                              ValueChanged="@(async (string s) => await OnSearchChanged(s))"
-                              Variant="Variant.Outlined" 
-                              Margin="Margin.Dense" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudSelect T="int?" Value="_selectedSitioId" ValueChanged="OnSitioFilterChanged" Label="Tienda" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
-                    @foreach (var s in _sitios)
-                    {
-                        var count = _sitioCounts.GetValueOrDefault(s.Id, 0);
-                        <MudSelectItem Value="@((int?)s.Id)">@($"{s.Nombre} ({count})")</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="6">
-                <MudSelect T="string" Value="_selectedCategoria" ValueChanged="OnCategoriaFilterChanged" Label="Categoría" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Placeholder="Todas">
-                    @foreach (var cat in _categorias)
-                    {
-                        var count = _categoriaCounts.GetValueOrDefault(cat, 0);
-                        <MudSelectItem Value="@cat">@($"{cat} ({count})")</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-        </MudGrid>
+            <MudSelect T="string" Value="_sortBy" ValueChanged="@(async (string s) => { _sortBy = s; await LoadProductos(); })" Label="Ordenar por" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px;">
+                <MudSelectItem Value='@("nombre")'>Nombre (A-Z)</MudSelectItem>
+                <MudSelectItem Value='@("descuento")'>Mayor Descuento (%)</MudSelectItem>
+                <MudSelectItem Value='@("precio_asc")'>Precio: Menor a Mayor</MudSelectItem>
+                <MudSelectItem Value='@("precio_desc")'>Precio: Mayor a Menor</MudSelectItem>
+            </MudSelect>
 
+            <div class="d-flex align-center gap-1 border border-solid mud-border-default rounded pa-1" style="background: var(--mud-palette-background-grey);">
+                <MudIconButton Icon="@Icons.Material.Filled.GridView" Color="@(_isGridView ? Color.Primary : Color.Default)" Size="Size.Small" OnClick="@(() => _isGridView = true)" Tooltip="Vista en Cuadrícula" />
+                <MudIconButton Icon="@Icons.Material.Filled.ViewList" Color="@(!_isGridView ? Color.Primary : Color.Default)" Size="Size.Small" OnClick="@(() => _isGridView = false)" Tooltip="Vista en Lista" />
+            </div>
+        </div>
+    </div>
+
+    <!-- FILTROS RÁPIDOS TOGGLES -->
+    <div class="d-flex align-center gap-2 mt-2 pt-2 border-t border-solid mud-border-default">
+        <MudChip T="bool" Variant="@(_filterSoloOfertas ? Variant.Filled : Variant.Outlined)" Color="Color.Success" OnClick="@(async () => { _filterSoloOfertas = !_filterSoloOfertas; await LoadProductos(); })" Size="Size.Small" Class="font-bold">
+            🔥 Solo con Descuento
+        </MudChip>
+        <MudChip T="bool" Variant="@(_filterSoloStock ? Variant.Filled : Variant.Outlined)" Color="Color.Info" OnClick="@(async () => { _filterSoloStock = !_filterSoloStock; await LoadProductos(); })" Size="Size.Small" Class="font-bold">
+            📦 Solo en Stock
+        </MudChip>
+    </div>
+</MudPaper>
+
+<MudGrid>
+    <!-- VISTA DE PRODUCTOS (GRID / LISTA) -->
+    <MudItem xs="12" md="5" Class="@(_showDetails ? "mobile-hide-list" : "d-block")">
         @if (_loadingProductos)
         {
             <div class="d-flex justify-center my-8">
@@ -117,11 +152,77 @@
         else if (_productos.Count == 0)
         {
             <MudPaper Outlined="true" Class="pa-8 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
-                <MudText Typo="Typo.body2" Class="text-muted">No se encontraron productos.</MudText>
+                <MudText Typo="Typo.body2" Class="text-muted">No se encontraron productos con los filtros aplicados.</MudText>
             </MudPaper>
+        }
+        else if (_isGridView)
+        {
+            <!-- VISTA CUADRÍCULA (GRID CARDS) -->
+            <MudGrid Spacing="2">
+                @foreach (var prod in _productos)
+                {
+                    var firstImgUrl = prod.Variantes.FirstOrDefault(v => !string.IsNullOrEmpty(v.ImagenUrl))?.ImagenUrl;
+                    var minPrecio = prod.Variantes.Where(v => v.PrecioActual.HasValue).Select(v => v.PrecioActual!.Value).DefaultIfEmpty(0).Min();
+                    var maxDescuentoPct = prod.Variantes.Select(v => (v.PrecioAnterior.HasValue && v.PrecioAnterior > v.PrecioActual && v.PrecioActual.HasValue) ? (double)((v.PrecioAnterior.Value - v.PrecioActual.Value) / v.PrecioAnterior.Value) * 100 : 0).DefaultIfEmpty(0).Max();
+                    var isSelected = _selectedProducto?.Id == prod.Id;
+
+                    <MudItem xs="12" sm="6">
+                        <MudCard Outlined="true" 
+                                 Class='@($"border border-solid mud-border-default h-100 product-grid-card {(isSelected ? "selected-product-item" : "")}")' 
+                                 Style="background: var(--mud-palette-surface);"
+                                 @onclick="@(() => OnProductoSelected(prod))">
+                            <MudCardContent Class="pa-3">
+                                <div class="d-flex flex-column gap-2">
+                                    <div class="d-flex justify-space-between align-start">
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="font-bold pa-0 ma-0" Style="font-size: 0.65rem;">
+                                            @prod.Categoria
+                                        </MudChip>
+                                        @if (maxDescuentoPct > 0)
+                                        {
+                                            <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 0.7rem; background: rgba(16, 185, 129, 0.15); padding: 1px 6px; border-radius: 4px;">
+                                                -@($"{maxDescuentoPct:F0}%")
+                                            </span>
+                                        }
+                                    </div>
+                                    
+                                    <div class="d-flex align-center gap-3">
+                                        @if (!string.IsNullOrEmpty(firstImgUrl))
+                                        {
+                                            <div class="d-flex align-center justify-center rounded border border-solid mud-border-default pa-1" style="width: 54px; height: 54px; background: white; flex-shrink: 0; overflow: hidden;">
+                                                <img src="@firstImgUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen" />
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex align-center justify-center rounded border border-solid mud-border-default pa-1" style="width: 54px; height: 54px; background: var(--mud-palette-background-grey); flex-shrink: 0;">
+                                                <MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Size="Size.Small" />
+                                            </div>
+                                        }
+                                        
+                                        <div style="min-width: 0; flex-grow: 1;">
+                                            <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text">@prod.Nombre</MudText>
+                                            <MudText Typo="Typo.caption" Class="text-muted d-block truncate-text">@prod.Marca</MudText>
+                                            
+                                            <div class="d-flex align-center justify-space-between mt-1">
+                                                <MudText Typo="Typo.subtitle2" Class="font-bold text-success">
+                                                    @(minPrecio > 0 ? $"${minPrecio:N2}" : "Sin precio")
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Class="text-muted font-bold" Style="font-size: 0.65rem;">
+                                                    @prod.Variantes.Count tienda(s)
+                                                </MudText>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
         }
         else
         {
+            <!-- VISTA LISTA COMPACTA -->
             <MudList T="ProductoMaestro" SelectedValue="_selectedProducto" SelectedValueChanged="OnProductoSelected" Color="Color.Primary" Class="border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface); padding: 0;">
                 @foreach (var prod in _productos)
                 {
@@ -168,6 +269,7 @@
         }
     </MudItem>
 
+
     <!-- DETALLE DEL PRODUCTO SELECCIONADO -->
     <MudItem xs="12" md="7" Class="@(!_showDetails ? "mobile-hide-details" : "d-block")">
         @if (_selectedProducto == null)
@@ -195,8 +297,54 @@
                     </MudMenu>
                 </div>
 
+                <!-- RESUMEN DE ANALÍTICA DEL PRODUCTO MAESTRO -->
+                @if (_variantes.Any(v => v.PrecioActual.HasValue))
+                {
+                    var precios = _variantes.Where(v => v.PrecioActual.HasValue).Select(v => (double)v.PrecioActual!.Value).ToList();
+                    var minPrecio = precios.Min();
+                    var maxPrecio = precios.Max();
+                    var avgPrecio = precios.Average();
+                    var mejorVariante = _variantes.Where(v => v.PrecioActual.HasValue).OrderBy(v => v.PrecioActual).FirstOrDefault();
+                    var ahorroMax = maxPrecio - minPrecio;
+                    var ahorroPct = maxPrecio > 0 ? (ahorroMax / maxPrecio) * 100 : 0;
+                    
+                    <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default mb-2" Style="background: var(--mud-palette-surface);">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+                            <div class="d-flex align-center gap-3">
+                                <div class="rounded pa-2" style="background: rgba(16, 185, 129, 0.15);">
+                                    <MudIcon Icon="@Icons.Material.Filled.LocalOffer" Color="Color.Success" Size="Size.Medium" />
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="text-muted d-block">Mejor Opción Actual</MudText>
+                                    <MudText Typo="Typo.subtitle1" Class="font-bold mud-text-success">
+                                        $@minPrecio.ToString("N2") <span style="font-size: 0.75rem;" class="text-muted">(@(mejorVariante?.CatalogoSitio?.Nombre ?? "Tienda"))</span>
+                                    </MudText>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex align-center gap-6 flex-wrap">
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Máximo</MudText>
+                                    <MudText Typo="Typo.subtitle2" Class="font-bold">$@maxPrecio.ToString("N2")</MudText>
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="text-muted d-block">Precio Promedio</MudText>
+                                    <MudText Typo="Typo.subtitle2" Class="font-bold">$@avgPrecio.ToString("N2")</MudText>
+                                </div>
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="text-muted d-block">Ahorro Máx. Entre Tiendas</MudText>
+                                    <MudText Typo="Typo.subtitle2" Class="font-bold text-info">
+                                        $@ahorroMax.ToString("N2") (@ahorroPct.ToString("F0")%)
+                                    </MudText>
+                                </div>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+
                 <!-- CARDS DE VARIANTES (SITIOS COMPARADOS) -->
                 <MudText Typo="Typo.subtitle2" Class="font-bold mt-2" Style="font-family: 'Outfit', sans-serif;">Precios Actuales por Tienda</MudText>
+
                 @if (_variantes.Count == 0)
                 {
                     <MudPaper Outlined="true" Class="pa-6 text-center border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
@@ -485,6 +633,12 @@
     private string _searchQuery = string.Empty;
     private int? _selectedSitioId;
     private string? _selectedCategoria;
+
+    // Rediseño: Vistas y Ordenamiento
+    private bool _isGridView = true;
+    private string _sortBy = "nombre"; // "nombre", "descuento", "precio_asc", "precio_desc"
+    private bool _filterSoloOfertas = false;
+    private bool _filterSoloStock = false;
     
     private ProductoMaestro? _selectedProducto;
     private List<VarianteComercial> _variantes = new();
@@ -493,6 +647,7 @@
     private Dictionary<int, bool> _trackingStates = new();
     private Dictionary<int, int> _sitioCounts = new();
     private Dictionary<string, int> _categoriaCounts = new();
+
 
     // Gráfica
     private List<ChartSeries<double>> _chartSeries = new();
@@ -572,7 +727,25 @@
             query = query.Where(p => p.Categoria == _selectedCategoria);
         }
 
-        _productos = await query.OrderBy(p => p.Nombre).ToListAsync();
+        if (_filterSoloOfertas)
+        {
+            query = query.Where(p => p.Variantes.Any(v => v.PrecioActual != null && v.PrecioAnterior != null && v.PrecioActual < v.PrecioAnterior));
+        }
+
+        if (_filterSoloStock)
+        {
+            query = query.Where(p => p.Variantes.Any(v => v.EnStock));
+        }
+
+        var rawList = await query.ToListAsync();
+
+        _productos = _sortBy switch
+        {
+            "precio_asc" => rawList.OrderBy(p => p.Variantes.Where(v => v.PrecioActual.HasValue).Select(v => (double)v.PrecioActual!.Value).DefaultIfEmpty(double.MaxValue).Min()).ToList(),
+            "precio_desc" => rawList.OrderByDescending(p => p.Variantes.Where(v => v.PrecioActual.HasValue).Select(v => (double)v.PrecioActual!.Value).DefaultIfEmpty(0).Min()).ToList(),
+            "descuento" => rawList.OrderByDescending(p => p.Variantes.Select(v => (v.PrecioAnterior.HasValue && v.PrecioAnterior > v.PrecioActual && v.PrecioActual.HasValue) ? (double)((v.PrecioAnterior.Value - v.PrecioActual.Value) / v.PrecioAnterior.Value) : 0).DefaultIfEmpty(0).Max()).ToList(),
+            _ => rawList.OrderBy(p => p.Nombre).ToList()
+        };
 
         // Calcular conteos para filtros (faceted counts)
         _sitioCounts = _productos
@@ -586,6 +759,7 @@
 
         _loadingProductos = false;
     }
+
 
     private async Task LoadSitios()
     {
@@ -605,11 +779,12 @@
         await LoadProductos();
     }
 
-    private async Task OnCategoriaFilterChanged(string categoria)
+    private async Task OnCategoriaFilterChanged(string? categoria)
     {
         _selectedCategoria = categoria;
         await LoadProductos();
     }
+
 
     private async Task OnProductoSelected(ProductoMaestro prod)
     {

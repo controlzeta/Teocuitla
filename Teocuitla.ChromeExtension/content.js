@@ -73,6 +73,27 @@ function extractSku(url, jsonLdProduct) {
   return String(sku).trim();
 }
 
+function isPageOutOfStock() {
+  const text = document.body ? document.body.innerText.toLowerCase() : '';
+  if (text.includes('este producto no está disponible') ||
+      text.includes('publicación pausada') ||
+      text.includes('producto no disponible') ||
+      text.includes('sin stock') ||
+      text.includes('agotado') ||
+      text.includes('out of stock') ||
+      text.includes('sold out') ||
+      text.includes('no disponible')) {
+    return true;
+  }
+  const noStockMsg = document.querySelector('.ui-pdp-message') || 
+                     document.querySelector('[class*="no-stock"]') || 
+                     document.querySelector('.ui-pdp-buybox .ui-message');
+  if (noStockMsg && /no está disponible|agotado|pausada|sin stock/i.test(noStockMsg.innerText)) {
+    return true;
+  }
+  return false;
+}
+
 function extractProductData() {
   let url = window.location.href;
   let domain = window.location.hostname.replace('www.', '');
@@ -125,8 +146,9 @@ function extractProductData() {
         const color = '';
         const marca = extractBrandFromName(nombre);
 
-        // Si la extracción fue exitosa con los selectores de la base de datos, los mantenemos y reportamos
-        if (sku && nombre && precio > 0) {
+        // Si la extracción fue exitosa con los selectores de la base de datos (o el producto está agotado)
+        const outOfStock = isPageOutOfStock();
+        if (sku && nombre && (precio > 0 || outOfStock)) {
           sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, site.selectorNombreXPath, site.selectorPrecioXPath, site.selectorImagenXPath);
           return;
         }
@@ -349,10 +371,11 @@ function executeHardcodedOrGenericExtraction(url, domain) {
       learnedImagenXPath = getSmartXPath(imageNode);
     }
 
-    if (sku && nombre && precio > 0) {
+    const outOfStock = isPageOutOfStock();
+    if (sku && nombre && (precio > 0 || outOfStock)) {
       sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, learnedNombreXPath, learnedPrecioXPath, learnedImagenXPath);
     } else {
-      console.warn('[Teocuitla] Datos insuficientes para la extracción local/genérica. Nombre:', nombre, 'Precio:', precio, 'SKU:', sku);
+      console.warn('[Teocuitla] Datos insuficientes para la extracción local/genérica. Nombre:', nombre, 'Precio:', precio, 'SKU:', sku, 'Agotado:', outOfStock);
       chrome.runtime.sendMessage({
         action: 'ingestStatus',
         success: false,

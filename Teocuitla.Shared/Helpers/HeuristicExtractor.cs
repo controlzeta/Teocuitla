@@ -267,9 +267,12 @@ namespace Teocuitla.Shared.Helpers
                 result.ImagenUrl = imgNode.Attributes["content"]?.Value;
             }
 
+            var isAmazon = doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:site']")?.GetAttributeValue("content", "")?.Contains("Amazon", StringComparison.OrdinalIgnoreCase) == true
+                           || doc.DocumentNode.SelectSingleNode("//title")?.InnerText.Contains("Amazon", StringComparison.OrdinalIgnoreCase) == true;
+
             var priceNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:price:amount']")
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@property='og:price:amount']")
-                            ?? doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:data1']");
+                            ?? (isAmazon ? null : doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:data1']"));
             if (priceNode != null)
             {
                 var priceStr = priceNode.GetAttributeValue("content", "").Trim();
@@ -337,18 +340,22 @@ namespace Teocuitla.Shared.Helpers
                 if (parent != null)
                 {
                     var parentText = parent.InnerText;
-                    var match = PriceRegex.Match(parentText);
-                    if (match.Success)
+                    var normalizedText = Regex.Replace(parentText, @"\s+", " ").Trim();
+                    if (normalizedText.Length < 150)
                     {
-                        var priceValStr = match.Groups[1].Value.Replace(",", "");
-                        if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                        var match = PriceRegex.Match(parentText);
+                        if (match.Success)
                         {
-                            result.Precio = parsedPrice;
-                            // Encontrar el nodo especifico del precio para aprender su selector
-                            var priceNode = FindNodeForPrice(doc, parsedPrice);
-                            if (priceNode != null)
+                            var priceValStr = match.Groups[1].Value.Replace(",", "");
+                            if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
                             {
-                                result.XPathSugerido = GetSmartXPath(priceNode);
+                                result.Precio = parsedPrice;
+                                // Encontrar el nodo especifico del precio para aprender su selector
+                                var priceNode = FindNodeForPrice(doc, parsedPrice);
+                                if (priceNode != null)
+                                {
+                                    result.XPathSugerido = GetSmartXPath(priceNode);
+                                }
                             }
                         }
                     }
@@ -368,6 +375,25 @@ namespace Teocuitla.Shared.Helpers
             }
         }
 
+        private static bool IsWarrantyOrAccessory(HtmlNode node)
+        {
+            var current = node;
+            int depth = 0;
+            while (current != null && depth < 5)
+            {
+                var id = current.GetAttributeValue("id", "").ToLower();
+                var @class = current.GetAttributeValue("class", "").ToLower();
+                if (id.Contains("warranty") || id.Contains("protection") || id.Contains("seguro") || id.Contains("insurance") || id.Contains("coaseguro")
+                    || @class.Contains("warranty") || @class.Contains("protection") || @class.Contains("seguro") || @class.Contains("insurance"))
+                {
+                    return true;
+                }
+                current = current.ParentNode;
+                depth++;
+            }
+            return false;
+        }
+
         private static decimal? FindPriceInDom(HtmlDocument doc, out HtmlNode? priceNode)
         {
             priceNode = null;
@@ -377,6 +403,7 @@ namespace Teocuitla.Shared.Helpers
                 foreach (var candidate in priceCandidates)
                 {
                     if (candidate.InnerText.Length > 50) continue;
+                    if (IsWarrantyOrAccessory(candidate)) continue;
                     var match = PriceRegex.Match(candidate.InnerText);
                     if (match.Success)
                     {
@@ -401,6 +428,7 @@ namespace Teocuitla.Shared.Helpers
                     var txt = node.InnerText.Trim();
                     if (txt.Length < 30)
                     {
+                        if (node.ParentNode != null && IsWarrantyOrAccessory(node.ParentNode)) continue;
                         var match = PriceRegex.Match(txt);
                         if (match.Success)
                         {

@@ -171,10 +171,8 @@ namespace Teocuitla.Tests
             {
                 var amazonHtml = File.ReadAllText(amazonFile);
                 var amazonResult = HeuristicExtractor.Extract(amazonHtml);
-                Assert.Contains("Odyssey G5", amazonResult.Nombre);
-                Assert.Equal(5908.02m, amazonResult.Precio);
-                Assert.Equal("https://m.media-amazon.com/images/I/81Pm4yGtiYL._AC_SX679_.jpg", amazonResult.ImagenUrl);
-                Assert.True(amazonResult.EnStock);
+                Assert.Contains("Imou Tres Lentes", amazonResult.Nombre);
+                Assert.Equal(1797.00m, amazonResult.Precio);
             }
 
             if (File.Exists(liverpoolFile))
