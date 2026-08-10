@@ -134,7 +134,7 @@ namespace Teocuitla.Web.Controllers
                             V.PrecioActual = T.Precio,
                             V.EnStock = T.EnStock,
                             V.UltimaActualizacion = T.Fecha,
-                            V.ImagenUrl = COALESCE(T.ImagenUrl, V.ImagenUrl)
+                            V.ImagenUrl = CASE WHEN V.ImagenUrl IS NOT NULL AND V.ImagenUrl <> '' THEN V.ImagenUrl ELSE T.ImagenUrl END
                         FROM Variantes_Comerciales V
                         INNER JOIN #TempIngest T ON V.Id = T.VarianteId;
 
@@ -283,7 +283,7 @@ namespace Teocuitla.Web.Controllers
                             mVar.EnStock = dto.Precio > 0;
                             mVar.UltimaActualizacion = DateTime.Now;
                             mVar.UrlProducto = cleanDtoUrl;
-                            if (!string.IsNullOrEmpty(dto.ImagenUrl))
+                            if (!string.IsNullOrEmpty(dto.ImagenUrl) && string.IsNullOrEmpty(mVar.ImagenUrl))
                             {
                                 mVar.ImagenUrl = dto.ImagenUrl;
                             }
