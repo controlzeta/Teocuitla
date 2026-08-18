@@ -35,6 +35,7 @@ builder.Services.AddHttpClient();
 
 // Registrar controladores para soportar API de ingesta
 builder.Services.AddControllers();
+builder.Services.AddSingleton<Teocuitla.Web.Services.IngestionNotificationService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()

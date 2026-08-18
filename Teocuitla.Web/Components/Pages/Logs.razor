@@ -34,7 +34,7 @@
                 <MudGrid Spacing="2" Class="align-end">
                     <MudItem xs="12" sm="3" md="2">
                         <MudSelect T="int" @bind-Value="_selectedYear" Label="Año" Variant="Variant.Outlined" Margin="Margin.Dense" SelectedValuesChanged="OnFiltersChanged">
-                            @for (int year = DateTime.UtcNow.Year - 1; year <= DateTime.UtcNow.Year + 1; year++)
+                            @foreach (var year in _availableYears)
                             {
                                 <MudSelectItem Value="@year">@year</MudSelectItem>
                             }
@@ -185,6 +185,7 @@
     private int _selectedMonth = DateTime.UtcNow.Month;
     private string _selectedLevel = "All";
     private string _searchQuery = string.Empty;
+    private List<int> _availableYears = Enumerable.Range(DateTime.UtcNow.Year - 3, 5).OrderByDescending(y => y).ToList();
 
     private async Task OnFiltersChanged()
     {

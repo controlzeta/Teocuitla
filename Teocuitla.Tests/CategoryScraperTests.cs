@@ -385,7 +385,7 @@ namespace Teocuitla.Tests
                     var price = CategoryScraper.ExtraerPrecioEstructurado(priceNode) ?? CategoryScraper.ParsePrice(priceNode?.InnerText);
 
                     bool nodeHasPrice = node.InnerText.Contains("$");
-                    if (!string.IsNullOrEmpty(name) && (!nodeHasPrice || price.HasValue))
+                    if (!string.IsNullOrEmpty(name) && (!nodeHasPrice || price.HasValue || node.InnerText.Contains("no está disponible") || node.InnerText.Contains("no disponible") || node.InnerText.Contains("agotado") || node.InnerText.Contains("pausada")))
                     {
                         extractedCount++;
                         extractedList.Add($"Product: Name='{name}', Price={price}");

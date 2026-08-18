@@ -19,21 +19,26 @@ When editing scrapers in `Teocuitla.Shared/Helpers/` (`HeuristicExtractor.cs`, `
 - **H1 Parent Check**: Do not search the entire inner text of a header parent node for a price unless that parent text is extremely specific (e.g. `< 150` characters). Modern retail pages (like Amazon) have very large header parents containing warranty info, related products, and ads that trigger false price positives.
 - **Price Classes**: Add common site-specific price elements to the direct class matching array (`priceClasses`), such as `a-price`, `apex-pricetopay-value`, and `text-price-primary`.
 
-### 2. Stock Detection
-- **Avoid Global Text Collisions**: Do not search the entire page text globally for strings like `"no disponible"` or `"agotado"` if a dedicated availability container exists. Target specific availability nodes (e.g. containing `#availability`, `.availability`, `.stock`) to prevent false-out-of-stock detections triggered by other regions of the page.
+### 2. Structured Data (JSON-LD & Meta Tags) Price Extraction
+- **Reject Zero/Negative Prices**: In structured data (JSON-LD, Microdata, OpenGraph), never accept `price <= 0` (e.g., `"price": 0`) as a valid extracted price. E-commerce sites like Mercado Libre output `price: 0` in JSON-LD when items are temporarily unpriced or out-of-stock. Always require `price > 0`. If `price <= 0`, ignore it so progressive fallbacks (Meta Tags or DOM Heuristics) can retrieve the real price.
+- **AggregateOffer & Nested Offers**: Always check for `@type: AggregateOffer` which stores price range values in `lowPrice` / `highPrice` or an array of nested `offers` objects rather than a direct `price` property.
 
-### 3. List/Category Scraper & Grid Detection
+### 3. Stock & Availability Detection
+- **Avoid Global Text Collisions**: Do not search the entire page text globally for strings like `"no disponible"` or `"agotado"` if a dedicated availability container exists. Target specific availability nodes (e.g. containing `#availability`, `.availability`, `.stock`, `.buybox`) to prevent false-out-of-stock detections triggered by other regions of the page (such as footers with *"Facturación no disponible"* or sidebars).
+- **Prioritize Dedicated Nodes & Structured Metadata**: Always check JSON-LD `availability` (e.g. `schema.org/InStock`) or meta tags (`product:availability`) first, followed by dedicated availability DOM containers.
+
+### 4. List/Category Scraper & Grid Detection
 - **Filter Out Utility Classes**: Sibling patterns and semantic clustering must filter out utility/layout class names (e.g., Tailwind's `flex`, `grid`, paddings/margins `p-`, `m-`, `w-`, `h-`, border and text utilities). Otherwise, generic layout elements will dominate and false-positive match headers/navigation bars.
 - **Support Root Link Cards**: Do not assume the product link `<a>` is always a child/descendant of the product card container. Many modern lists use the `<a>` tag itself as the root node of the card. Use `(self::a or .//a)` in XPath predicates instead of just `.//a`.
 
-### 4. SKU & Brand Normalization
+### 5. SKU & Brand Normalization
 - **Standardized Formats**: Brand names containing subcategories or sub-brands (e.g. `VIDANAT/VITAMINAS`) must be normalized to their main name (e.g., splitting by `/` and taking the first token: `VIDANAT`).
 - **Clean SKUs**: Always strip common text labels or prefixes (such as `SKU:`, `Ref:`, `Código:`) from parsed SKUs to ensure consistent database lookups and prevent duplicates.
 - **Unified Processing**: Make sure brand and SKU normalization helpers in `DataNormalizer` are utilized in both browser extension API controllers (like `IngestionController`) and background scraper tasks.
 
-### 5. Advanced Price Extraction & Formatting
+### 6. Advanced Price Extraction & Formatting
 - **Preserve Hidden Characters (Invisible CSS Cents)**: Real browsers (Selenium, Chrome Extension) evaluate CSS styles and will strip out invisible characters when using `.Text` or `.innerText` (such as a hidden dot in `<span class="invisible">.</span>20`). To prevent price multiplication (e.g., extracting `2977920` instead of `29779.20`), always prefer `textContent` / `GetAttribute("textContent")` to retrieve the price text.
 - **Scope Selectors (Carousel/Promo Panels)**: Hardcoded or learned selectors must be scoped to the main product detail region (e.g. `//sip-product-details-page` or `//main`) to avoid accidentally matching carousels, recently viewed items, or sidebars containing incorrect prices.
-- **Progressive Fallback**: Multi-tier extraction (JSON-LD -> Meta Tags -> DOM Heuristics) must operate progressively for name and price. If a higher tier successfully extracts the name but lacks the price, the parser must continue to check subsequent tiers for the price rather than stopping prematurely and returning null.
+- **Progressive Fallback**: Multi-tier extraction (JSON-LD -> Meta Tags -> DOM Heuristics) must operate progressively for name and price. If a higher tier successfully extracts the name but lacks a valid positive price (`price > 0`), the parser must continue to check subsequent tiers for the price rather than stopping prematurely and returning zero/null.
 - **Discount Overrides**: If a page has a discount active, the main pricing tag may contain the original price. The scraping logic must check for explicit discount classes (like `price-after-discount`, `price-discount`, `special-price`) and override the extracted price with the discounted value.
 - **Avoid Amazon Twitter Metadata**: On Amazon pages, never rely on Twitter meta tags (such as `twitter:data1`) for the product price. Amazon frequently populates these with warranty/protection plan prices or accessory costs instead of the actual product price. Skip them and fallback to DOM parsing.

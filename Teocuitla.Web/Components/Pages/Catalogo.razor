@@ -714,7 +714,10 @@
         
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
-            query = query.Where(p => p.Nombre.Contains(_searchQuery) || p.Marca.Contains(_searchQuery) || p.Categoria.Contains(_searchQuery));
+            query = query.Where(p => p.Nombre.Contains(_searchQuery) 
+                                  || p.Marca.Contains(_searchQuery) 
+                                  || p.Categoria.Contains(_searchQuery)
+                                  || p.Variantes.Any(v => v.UrlProducto.Contains(_searchQuery) || v.Sku.Contains(_searchQuery)));
         }
 
         if (_selectedSitioId.HasValue && _selectedSitioId > 0)
@@ -1150,18 +1153,32 @@
 
     private async Task DeleteVariante(VarianteComercial variante)
     {
+        if (variante == null) return;
+
         bool confirm = await JS.InvokeAsync<bool>("confirm", 
             $"¿Eliminar el enlace de {variante.CatalogoSitio?.Nombre ?? "esta tienda"}?");
 
         if (confirm)
         {
-            using var context = await DbFactory.CreateDbContextAsync();
-            context.VariantesComerciales.Remove(variante);
-            await context.SaveChangesAsync();
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                var dbVariante = await context.VariantesComerciales.FindAsync(variante.Id);
+                if (dbVariante != null)
+                {
+                    context.VariantesComerciales.Remove(dbVariante);
+                    await context.SaveChangesAsync();
+                }
 
-            Snackbar.Add("Enlace eliminado.", Severity.Success);
-            await LoadProductoDetalle();
-            await LoadDescuentos();
+                Snackbar.Add("Enlace eliminado con éxito.", Severity.Success);
+                await LoadProductoDetalle();
+                await LoadDescuentos();
+                await LoadProductos();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al eliminar el enlace: {ex.Message}", Severity.Error);
+            }
         }
     }
 

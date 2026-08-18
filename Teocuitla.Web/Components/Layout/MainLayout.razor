@@ -1,4 +1,7 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject ISnackbar Snackbar
+@inject Teocuitla.Web.Services.IngestionNotificationService NotificationService
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -92,4 +95,28 @@
             DefaultBorderRadius = "12px"
         }
     };
+
+    protected override void OnInitialized()
+    {
+        NotificationService.OnIngestionReceived += HandleIngestionReceived;
+    }
+
+    private void HandleIngestionReceived(object? sender, Teocuitla.Web.Services.IngestionNotificationEventArgs e)
+    {
+        InvokeAsync(() =>
+        {
+            var priceStr = e.Precio > 0 ? $"${e.Precio:N2}" : "Agotado / Sin precio";
+            Snackbar.Add($"⚡ Ingesta desde extensión | SKU: {e.Sku} | Precio: {priceStr}", Severity.Success, config =>
+            {
+                config.VisibleStateDuration = 4000;
+                config.ShowCloseIcon = true;
+            });
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        NotificationService.OnIngestionReceived -= HandleIngestionReceived;
+    }
 }

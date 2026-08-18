@@ -143,7 +143,13 @@ namespace Teocuitla.Shared.Helpers
                 }
             }
 
-            return false;
+            if (!result.Precio.HasValue || result.Precio.Value <= 0)
+            {
+                result.Precio = null;
+                return false;
+            }
+
+            return true;
         }
 
         private static string? GetJsonStringValue(JsonElement elem)
@@ -182,7 +188,11 @@ namespace Teocuitla.Shared.Helpers
                     }
                     else if (offersProp.ValueKind == JsonValueKind.Array && offersProp.GetArrayLength() > 0)
                     {
-                        ExtractOfferDetails(offersProp[0], result);
+                        foreach (var off in offersProp.EnumerateArray())
+                        {
+                            ExtractOfferDetails(off, result);
+                            if (result.Precio.HasValue && result.Precio.Value > 0) break;
+                        }
                     }
                 }
 
@@ -214,7 +224,7 @@ namespace Teocuitla.Shared.Helpers
                     }
                 }
 
-                return result.Precio.HasValue;
+                return result.Precio.HasValue && result.Precio.Value > 0;
             }
             return false;
         }
@@ -226,7 +236,8 @@ namespace Teocuitla.Shared.Helpers
                 string? priceStr = null;
                 if (priceProp.ValueKind == JsonValueKind.Number)
                 {
-                    result.Precio = priceProp.GetDecimal();
+                    var val = priceProp.GetDecimal();
+                    if (val > 0) result.Precio = val;
                 }
                 else if (priceProp.ValueKind == JsonValueKind.String)
                 {
@@ -235,14 +246,59 @@ namespace Teocuitla.Shared.Helpers
 
                 if (priceStr != null && decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
                 {
-                    result.Precio = parsedPrice;
+                    if (parsedPrice > 0) result.Precio = parsedPrice;
+                }
+            }
+
+            if (!result.Precio.HasValue || result.Precio <= 0)
+            {
+                if (offer.TryGetProperty("lowPrice", out var lowPriceProp))
+                {
+                    string? priceStr = null;
+                    if (lowPriceProp.ValueKind == JsonValueKind.Number)
+                    {
+                        var val = lowPriceProp.GetDecimal();
+                        if (val > 0) result.Precio = val;
+                    }
+                    else if (lowPriceProp.ValueKind == JsonValueKind.String)
+                    {
+                        priceStr = lowPriceProp.GetString();
+                    }
+
+                    if (priceStr != null && decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                    {
+                        if (parsedPrice > 0) result.Precio = parsedPrice;
+                    }
+                }
+            }
+
+            if (!result.Precio.HasValue || result.Precio <= 0)
+            {
+                if (offer.TryGetProperty("offers", out var nestedOffersProp))
+                {
+                    if (nestedOffersProp.ValueKind == JsonValueKind.Array && nestedOffersProp.GetArrayLength() > 0)
+                    {
+                        foreach (var subOffer in nestedOffersProp.EnumerateArray())
+                        {
+                            ExtractOfferDetails(subOffer, result);
+                            if (result.Precio.HasValue && result.Precio.Value > 0) break;
+                        }
+                    }
+                    else if (nestedOffersProp.ValueKind == JsonValueKind.Object)
+                    {
+                        ExtractOfferDetails(nestedOffersProp, result);
+                    }
                 }
             }
 
             if (offer.TryGetProperty("availability", out var availProp))
             {
                 var availUrl = availProp.GetString()?.ToLower() ?? "";
-                if (availUrl.Contains("outofstock") || availUrl.Contains("soldout") || availUrl.Contains("discontinued"))
+                if (availUrl.Contains("instock"))
+                {
+                    result.EnStock = true;
+                }
+                else if (availUrl.Contains("outofstock") || availUrl.Contains("soldout") || availUrl.Contains("discontinued"))
                 {
                     result.EnStock = false;
                 }
@@ -273,12 +329,12 @@ namespace Teocuitla.Shared.Helpers
             var priceNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:price:amount']")
                             ?? doc.DocumentNode.SelectSingleNode("//meta[@property='og:price:amount']")
                             ?? (isAmazon ? null : doc.DocumentNode.SelectSingleNode("//meta[@name='twitter:data1']"));
-            if (priceNode != null)
+            if (priceNode != null && (!result.Precio.HasValue || result.Precio <= 0))
             {
                 var priceStr = priceNode.GetAttributeValue("content", "").Trim();
                 if (decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
                 {
-                    result.Precio = parsedPrice;
+                    if (parsedPrice > 0) result.Precio = parsedPrice;
                 }
             }
 
@@ -287,16 +343,17 @@ namespace Teocuitla.Shared.Helpers
             if (stockNode != null)
             {
                 var stockStr = stockNode.GetAttributeValue("content", "").ToLower();
-                if (stockStr.Contains("out of stock") || stockStr.Contains("oos") || stockStr.Contains("instock") == false)
+                if (stockStr.Contains("instock"))
                 {
-                    if (stockStr.Contains("out") || stockStr.Contains("agotado"))
-                    {
-                        result.EnStock = false;
-                    }
+                    result.EnStock = true;
+                }
+                else if (stockStr.Contains("out of stock") || stockStr.Contains("oos") || stockStr.Contains("out") || stockStr.Contains("agotado"))
+                {
+                    result.EnStock = false;
                 }
             }
 
-            return !string.IsNullOrEmpty(result.Nombre) && result.Precio.HasValue;
+            return !string.IsNullOrEmpty(result.Nombre) && (!result.EnStock || (result.Precio.HasValue && result.Precio.Value > 0));
         }
 
         private static void ExtractFromDomHeuristics(HtmlDocument doc, HeuristicResult result)
@@ -320,8 +377,23 @@ namespace Teocuitla.Shared.Helpers
                 }
             }
 
+            var availNode = doc.DocumentNode.SelectSingleNode("//div[@id='availability']")
+                            ?? doc.DocumentNode.SelectSingleNode("//*[contains(@id, 'availability') or contains(@class, 'availability') or contains(@id, 'stock') or contains(@class, 'stock') or contains(@class, 'no_stock') or contains(@class, 'ui-pdp-message')]");
+            if (availNode != null)
+            {
+                var availText = availNode.InnerText.ToLower();
+                if (availText.Contains("no disponible") || availText.Contains("no está disponible") || availText.Contains("out of stock") || availText.Contains("agotado") || availText.Contains("sin stock") || availText.Contains("pausada"))
+                {
+                    result.EnStock = false;
+                }
+                else if (availText.Contains("en stock") || availText.Contains("disponible") || availText.Contains("in stock") || availText.Contains("sólo queda") || availText.Contains("solo queda") || availText.Contains("disponibles"))
+                {
+                    result.EnStock = true;
+                }
+            }
+
             var pageText = doc.DocumentNode.InnerText.ToLower();
-            if (pageText.Contains("agotado") || pageText.Contains("sin stock") || pageText.Contains("no disponible") || pageText.Contains("out of stock"))
+            if (pageText.Contains("este producto no está disponible") || pageText.Contains("producto no disponible") || pageText.Contains("publicación pausada") || pageText.Contains("agotado") || pageText.Contains("sin stock") || pageText.Contains("currently unavailable") || pageText.Contains("no_stock"))
             {
                 result.EnStock = false;
             }

@@ -536,7 +536,8 @@ namespace Teocuitla.Shared.Helpers
                 ("Repetitive Pattern Detector (Listas/Catálogos)", RepetitivePatternDetector.DetectSelectors),
                 ("Structural Grouping (Anclas DOM)", DetectSelectorsStructural),
                 ("Element Density Grid", DetectSelectorsDensity),
-                ("Class/ID Semantic Clustering", DetectSelectorsSemantic)
+                ("Class/ID Semantic Clustering", DetectSelectorsSemantic),
+                ("PDP Single Product Fallback", DetectSelectorsPdp)
             };
 
             foreach (var s in strategies)
@@ -556,6 +557,30 @@ namespace Teocuitla.Shared.Helpers
             }
 
             return null;
+        }
+
+        private static HeuristicSelectors? DetectSelectorsPdp(HtmlDocument doc, string baseUrl)
+        {
+            var h1 = doc.DocumentNode.SelectSingleNode("//h1");
+            var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']");
+            if (h1 == null && ogTitle == null)
+            {
+                return null;
+            }
+
+            var container = "//*[contains(@class, 'ui-pdp') or contains(@class, 'pdp') or contains(@id, 'product') or contains(@class, 'product')] | //main | //body";
+            var nombre = ".//h1 | .//meta[@property='og:title']";
+            var precio = ".//*[contains(@class, 'andes-money-amount__fraction') or contains(@class, 'price') or contains(@class, 'a-price-whole') or contains(@property, 'price')]";
+            var imagen = ".//meta[@property='og:image'] | .//img";
+
+            return new HeuristicSelectors
+            {
+                Container = container,
+                Nombre = nombre,
+                Precio = precio,
+                Imagen = imagen,
+                Link = ".//a"
+            };
         }
 
         private static bool ValidarSelectores(HtmlDocument doc, HeuristicSelectors selectors)

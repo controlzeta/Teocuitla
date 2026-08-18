@@ -22,15 +22,18 @@ namespace Teocuitla.Web.Controllers
         private readonly TeocuitlaDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IngestionController> _logger;
+        private readonly Teocuitla.Web.Services.IngestionNotificationService _notificationService;
 
         public IngestionController(
             TeocuitlaDbContext context,
             IConfiguration configuration,
-            ILogger<IngestionController> logger)
+            ILogger<IngestionController> logger,
+            Teocuitla.Web.Services.IngestionNotificationService notificationService)
         {
             _context = context;
             _configuration = configuration;
             _logger = logger;
+            _notificationService = notificationService;
         }
 
         [HttpPost("bulk")]
@@ -353,6 +356,8 @@ namespace Teocuitla.Web.Controllers
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
                 }
+
+                _notificationService.NotifyIngestion(dto.Sku, dto.Nombre, dto.Precio, dto.Dominio);
 
                 return Ok(new { Message = "Producto ingerido con éxito desde la extensión.", Sku = dto.Sku });
             }

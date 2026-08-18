@@ -80,11 +80,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .then(data => {
         console.log('[Teocuitla] Ingesta exitosa del producto:', data);
-        chrome.runtime.sendMessage({ action: 'ingestStatus', success: true, message: `Ingestado: SKU ${productData.sku}` });
+        const statusMsg = `Ingestado: SKU ${productData.sku}`;
+        chrome.runtime.sendMessage({ action: 'ingestStatus', success: true, message: statusMsg }).catch(() => {});
+
+        const notificationPayload = {
+          action: 'showIngestNotification',
+          success: true,
+          sku: productData.sku,
+          nombre: productData.nombre,
+          precio: productData.precio,
+          message: statusMsg
+        };
+
+        if (sender && sender.tab && sender.tab.id) {
+          chrome.tabs.sendMessage(sender.tab.id, notificationPayload).catch(() => {});
+        } else {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0]) {
+              chrome.tabs.sendMessage(tabs[0].id, notificationPayload).catch(() => {});
+            }
+          });
+        }
       })
       .catch(error => {
         console.error('[Teocuitla] Fallo al enviar producto a la API:', error);
-        chrome.runtime.sendMessage({ action: 'ingestStatus', success: false, message: error.message });
+        chrome.runtime.sendMessage({ action: 'ingestStatus', success: false, message: error.message }).catch(() => {});
+
+        const notificationPayload = {
+          action: 'showIngestNotification',
+          success: false,
+          sku: productData.sku,
+          message: error.message
+        };
+
+        if (sender && sender.tab && sender.tab.id) {
+          chrome.tabs.sendMessage(sender.tab.id, notificationPayload).catch(() => {});
+        }
       });
     });
   }

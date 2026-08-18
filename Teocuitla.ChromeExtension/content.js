@@ -56,7 +56,10 @@ function extractSku(url, jsonLdProduct) {
 
   // 5. Intentar regex en URL
   if (!sku) {
-    const skuMatch = url.match(/\/p\/(\d+)/) || 
+    const skuMatch = url.match(/\/up\/(MLM[A-Z0-9]+)/i) ||
+                     url.match(/\/p\/(MLM[A-Z0-9]+)/i) ||
+                     url.match(/(MLM[A-Z0-9]{8,15})/i) ||
+                     url.match(/\/p\/(\d+)/) || 
                      url.match(/\/dp\/([A-Z0-9]{10})/i) || 
                      url.match(/(MLM-?\d+)/i) || 
                      url.match(/\/(\d{5,12})(?:\/|\.|$)/);
@@ -205,15 +208,27 @@ function executeHardcodedOrGenericExtraction(url, domain) {
       marca = extractBrandFromName(nombre);
     } 
     else if (domain.includes('mercadolibre.com.mx')) {
-      // Mercado Libre PDP
-      nameNode = document.querySelector('.ui-pdp-title');
+      // Mercado Libre PDP / UPP
+      nameNode = document.querySelector('.ui-pdp-title') || 
+                 document.querySelector('h1') || 
+                 document.querySelector('.ui-pdp-header__title');
       nombre = nameNode ? nameNode.innerText.trim() : '';
+      if (!nombre) {
+        const ogTitle = document.querySelector('meta[property="og:title"]') || document.querySelector('meta[name="twitter:title"]');
+        if (ogTitle) nombre = ogTitle.content.replace(/\s*\|\s*MercadoLibre.*/i, '').trim();
+      }
 
-      const skuMatch = url.match(/(MLM-?\d+)/i);
-      sku = skuMatch ? skuMatch[1].replace('-', '') : '';
+      const skuMatch = url.match(/\/up\/(MLM[A-Z0-9]+)/i) || 
+                       url.match(/\/p\/(MLM[A-Z0-9]+)/i) || 
+                       url.match(/(MLM[A-Z0-9]{8,15})/i) || 
+                       url.match(/(MLM-?\d+)/i);
+      sku = skuMatch ? skuMatch[1].replace('-', '') : extractSku(url, null);
 
-      const priceFraction = document.querySelector('.ui-pdp-price__part .andes-money-amount__fraction');
-      const priceCents = document.querySelector('.ui-pdp-price__part .andes-money-amount__cents');
+      const priceFraction = document.querySelector('.ui-pdp-price__part .andes-money-amount__fraction') || 
+                            document.querySelector('.andes-money-amount__fraction') ||
+                            document.querySelector('.ui-pdp-price .andes-money-amount__fraction');
+      const priceCents = document.querySelector('.ui-pdp-price__part .andes-money-amount__cents') || 
+                         document.querySelector('.andes-money-amount__cents');
       if (priceFraction) {
         priceNode = priceFraction;
         let priceStr = priceFraction.innerText.replace(/[^\d]/g, '');
@@ -221,13 +236,22 @@ function executeHardcodedOrGenericExtraction(url, domain) {
           priceStr += '.' + priceCents.innerText.replace(/[^\d]/g, '');
         }
         precio = parseFloat(priceStr) || 0;
+      } else {
+        const metaPrice = document.querySelector('meta[property="product:price:amount"]') || 
+                          document.querySelector('meta[property="og:price:amount"]');
+        if (metaPrice) {
+          precio = parsePrice(metaPrice.content);
+        }
       }
 
-      imageNode = document.querySelector('.ui-pdp-gallery__figure__image') || document.querySelector('.ui-pdp-image');
+      imageNode = document.querySelector('.ui-pdp-gallery__figure__image') || 
+                  document.querySelector('.ui-pdp-image') || 
+                  document.querySelector('img[src*="mlstatic"]');
       imagenUrl = imageNode ? imageNode.src : '';
 
-      const brandElem = document.querySelector('.ui-pdp-features .ui-pdp-attribute-value');
-      marca = brandElem ? brandElem.innerText.trim() : 'Genérica';
+      const brandElem = document.querySelector('.ui-pdp-features .ui-pdp-attribute-value') || 
+                        document.querySelector('[itemprop="brand"]');
+      marca = brandElem ? brandElem.innerText.trim() : extractBrandFromName(nombre);
     } 
     else if (domain.includes('amazon.com.mx')) {
       // Amazon PDP
@@ -551,10 +575,199 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', extractProductData);
 }
 
-// Escuchar solicitudes de extracción manual desde el popup
+// Escuchar solicitudes de extracción manual y notificaciones de ingesta
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'manualExtract') {
     extractProductData();
     sendResponse({ success: true, message: 'Extracción manual gatillada.' });
+  } else if (request.action === 'showIngestNotification') {
+    showNonInvasiveNotification(request);
   }
 });
+
+function showNonInvasiveNotification(data) {
+  // Eliminar cualquier toast previo
+  const existing = document.getElementById('teocuitla-ingest-toast');
+  if (existing) {
+    existing.remove();
+  }
+
+  const toast = document.createElement('div');
+  toast.id = 'teocuitla-ingest-toast';
+
+  const isSuccess = data.success !== false;
+  if (isSuccess) {
+    playCashRegisterSound();
+  }
+
+  const skuText = data.sku || 'N/A';
+  const rawPrice = parseFloat(data.precio) || 0;
+  const priceText = rawPrice > 0 
+    ? `$${rawPrice.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : (data.precio === 0 ? 'Sin precio (Agotado)' : 'N/A');
+  const nombreText = data.nombre ? (data.nombre.length > 35 ? data.nombre.substring(0, 35) + '...' : data.nombre) : '';
+
+  const accentColor = isSuccess ? '#D4AF37' : '#E11D48';
+  const priceColor = isSuccess ? '#10B981' : '#F59E0B';
+  const icon = isSuccess ? '⚡' : '⚠️';
+  const statusTitle = isSuccess ? 'Precio Ingestado' : 'Fallo en Ingesta';
+
+  toast.style.cssText = `
+    position: fixed !important;
+    bottom: 24px !important;
+    right: 24px !important;
+    z-index: 2147483647 !important;
+    min-width: 290px !important;
+    max-width: 380px !important;
+    background: rgba(18, 20, 24, 0.96) !important;
+    color: #F4F4F5 !important;
+    border: 1px solid ${accentColor} !important;
+    border-radius: 12px !important;
+    padding: 12px 16px !important;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.6), 0 0 15px rgba(212, 175, 55, 0.15) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    transition: opacity 0.3s ease, transform 0.3s ease !important;
+    animation: teocuitlaToastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  `;
+
+  // Estilos de animación en el DOM si no existen
+  if (!document.getElementById('teocuitla-toast-styles')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'teocuitla-toast-styles';
+    styleEl.textContent = `
+      @keyframes teocuitlaToastSlideIn {
+        from { transform: translateY(20px) scale(0.95); opacity: 0; }
+        to { transform: translateY(0) scale(1); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  toast.innerHTML = `
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">${icon}</span>
+        <span style="font-weight: 700; color: #FFFFFF; font-size: 13px; letter-spacing: 0.3px;">Teocuitla • ${statusTitle}</span>
+      </div>
+      <button id="teocuitla-toast-close" style="background: none; border: none; color: #94A3B8; cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1; margin-top: -2px;">&times;</button>
+    </div>
+    ${nombreText ? `<div style="margin-top: 4px; color: #94A3B8; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${nombreText}</div>` : ''}
+    <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+      <div>SKU: <strong style="color: #F4F4F5; font-family: monospace; font-size: 12px;">${skuText}</strong></div>
+      <div>Precio: <strong style="color: ${priceColor}; font-size: 13px;">${priceText}</strong></div>
+    </div>
+  `;
+
+  document.body.appendChild(toast);
+
+  const closeBtn = toast.querySelector('#teocuitla-toast-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => dismissToast(toast));
+  }
+
+  // Desvanecer y remover tras 4 segundos
+  setTimeout(() => {
+    dismissToast(toast);
+  }, 4000);
+}
+
+function dismissToast(toast) {
+  if (!toast || !toast.parentNode) return;
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(10px)';
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 300);
+}
+
+function playCashRegisterSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const now = ctx.currentTime;
+
+    // 1. Sonido mecánico/metálico inicial de la caja registradora ("cha")
+    const bufferSize = Math.floor(ctx.sampleRate * 0.07);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(3200, now);
+    filter.Q.setValueAtTime(2.5, now);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(now);
+
+    // 2. Primera campana de timbre metálico ("ching" nota E6)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1318.51, now + 0.04);
+
+    gain1.gain.setValueAtTime(0.35, now + 0.04);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now + 0.04);
+    osc1.stop(now + 0.5);
+
+    // 3. Segunda campana agudísima ("ching" nota alta E7)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(2637.02, now + 0.08);
+
+    gain2.gain.setValueAtTime(0.45, now + 0.08);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.08);
+    osc2.stop(now + 0.65);
+
+    // 4. Armónico agudo brillante (resonancia metálica B7)
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.type = 'triangle';
+    osc3.frequency.setValueAtTime(3951.07, now + 0.08);
+
+    gain3.gain.setValueAtTime(0.15, now + 0.08);
+    gain3.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    osc3.start(now + 0.08);
+    osc3.stop(now + 0.4);
+
+  } catch (err) {
+    console.warn('[Teocuitla] No se pudo reproducir el sonido de caja registradora:', err);
+  }
+}
+
+
