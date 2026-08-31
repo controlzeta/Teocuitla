@@ -290,6 +290,10 @@ namespace Teocuitla.Web.Controllers
                             {
                                 mVar.ImagenUrl = dto.ImagenUrl;
                             }
+                            if (!mVar.Activo)
+                            {
+                                mVar.Activo = true;
+                            }
                             _context.VariantesComerciales.Update(mVar);
                         }
 
@@ -430,18 +434,18 @@ namespace Teocuitla.Web.Controllers
 
                 var totalPending = await _context.VariantesComerciales
                     .Include(v => v.CatalogoSitio)
-                    .Where(v => v.UltimaActualizacion == null || 
+                    .Where(v => v.Activo && (v.UltimaActualizacion == null || 
                                 (v.UltimaActualizacion < today && 
                                  v.CatalogoSitio != null && 
-                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos)))
+                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos))))
                     .CountAsync();
 
                 var rawVariants = await _context.VariantesComerciales
                     .Include(v => v.CatalogoSitio)
-                    .Where(v => v.UltimaActualizacion == null || 
+                    .Where(v => v.Activo && (v.UltimaActualizacion == null || 
                                 (v.UltimaActualizacion < today && 
                                  v.CatalogoSitio != null && 
-                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos)))
+                                 v.UltimaActualizacion < now.AddMinutes(-v.CatalogoSitio.IntervaloMinutos))))
                     .Select(v => new {
                         v.Id,
                         v.Nombre,
@@ -539,6 +543,59 @@ namespace Teocuitla.Web.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al limpiar variantes duplicadas.");
+                return StatusCode(500, $"Error interno: {ex.Message}");
+            }
+        }
+
+        [HttpDelete("variants/{id}")]
+        [HttpPost("variants/{id}/delete")]
+        [HttpPost("variants/delete/{id}")]
+        public async Task<IActionResult> DeactivateVariant(int id)
+        {
+            // 1. Validar la API Key
+            if (!Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey))
+            {
+                return Unauthorized("API Key no proporcionada.");
+            }
+
+            var configuredApiKey = _configuration["Scraping:ApiKey"] ?? "TeocuitlaDefaultApiKeySecret";
+            if (extractedApiKey != configuredApiKey)
+            {
+                return Unauthorized("API Key inválida.");
+            }
+
+            try
+            {
+                var variant = await _context.VariantesComerciales.FindAsync(id);
+                if (variant == null)
+                {
+                    return NotFound($"No se encontró la variante comercial con ID {id}.");
+                }
+
+                var cleanUrl = DataNormalizer.CleanProductUrl(variant.UrlProducto);
+
+                var matchingVariants = await _context.VariantesComerciales
+                    .Where(v => v.UrlProducto != null && v.UrlProducto != "")
+                    .ToListAsync();
+
+                var duplicates = matchingVariants
+                    .Where(v => DataNormalizer.CleanProductUrl(v.UrlProducto).Equals(cleanUrl, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var v in duplicates)
+                {
+                    v.Activo = false;
+                    _context.VariantesComerciales.Update(v);
+                }
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Variante '{Nombre}' (ID={Id}) y {Count} duplicados desactivados lógicamente.", variant.Nombre, id, duplicates.Count - 1);
+                return Ok(new { Message = "Producto eliminado (desactivado lógicamente) del catálogo.", Id = id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al desactivar lógicamente la variante con ID {Id}.", id);
                 return StatusCode(500, $"Error interno: {ex.Message}");
             }
         }

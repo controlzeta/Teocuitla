@@ -394,5 +394,81 @@ namespace Teocuitla.Tests
                 Assert.True(extractedCount > 0, $"No se pudo extraer ningún producto válido (nombre + precio) del archivo: {Path.GetFileName(file)}");
             }
         }
+
+        [Fact]
+        public void TestCostcoCategoryPage()
+        {
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
+
+            Assert.NotEmpty(htmlDir);
+            var file = Path.Combine(htmlDir, "costco.com.mx_2026-08-26_15-21-32.html");
+            Assert.True(File.Exists(file), $"El archivo de Costco no existe en: {file}");
+
+            var doc = new HtmlDocument();
+            doc.Load(file);
+
+            var selectors = CategoryScraper.DetectSelectorsHeuristic(doc, "https://www.costco.com.mx");
+            Assert.NotNull(selectors);
+
+            var productNodes = doc.DocumentNode.SelectNodes(selectors.Container);
+            Assert.NotNull(productNodes);
+            Assert.True(productNodes.Count > 0);
+
+            var extractedUrls = new System.Collections.Generic.List<string>();
+            foreach (var node in productNodes)
+            {
+                // Extraer el enlace similar a como se hace en CategoryScraper
+                string? link = null;
+                var linkNode = node.SelectSingleNode(selectors.Link);
+                if (linkNode != null)
+                {
+                    link = linkNode.GetAttributeValue("href", null)?.Trim();
+                }
+
+                if (string.IsNullOrEmpty(link))
+                {
+                    if (node.Name == "a")
+                    {
+                        link = node.GetAttributeValue("href", null)?.Trim();
+                    }
+                    if (string.IsNullOrEmpty(link))
+                    {
+                        var allLinks = node.SelectNodes(".//a");
+                        if (allLinks != null)
+                        {
+                            foreach (var aNode in allLinks)
+                            {
+                                var candidate = aNode.GetAttributeValue("href", null)?.Trim();
+                                if (!string.IsNullOrEmpty(candidate) && !candidate.StartsWith("javascript:") && candidate != "#")
+                                {
+                                    link = candidate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(link))
+                {
+                    extractedUrls.Add(link);
+                }
+            }
+
+            // Verificar si hay enlaces de categoría (/c/) extraídos
+            var categoryUrls = extractedUrls.Where(url => url.Contains("/c/")).ToList();
+            Assert.Empty(categoryUrls); // No debería haber ningún enlace de categoría extraído como producto
+        }
     }
 }

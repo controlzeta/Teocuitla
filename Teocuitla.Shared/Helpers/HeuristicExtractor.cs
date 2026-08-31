@@ -447,19 +447,35 @@ namespace Teocuitla.Shared.Helpers
             }
         }
 
-        private static bool IsWarrantyOrAccessory(HtmlNode node)
+        private static bool ShouldExcludeNode(HtmlNode node)
         {
             var current = node;
             int depth = 0;
-            while (current != null && depth < 5)
+            while (current != null && depth < 100)
             {
                 var id = current.GetAttributeValue("id", "").ToLower();
                 var @class = current.GetAttributeValue("class", "").ToLower();
+
+                // Excluir planes de garantía, protección o seguros
                 if (id.Contains("warranty") || id.Contains("protection") || id.Contains("seguro") || id.Contains("insurance") || id.Contains("coaseguro")
                     || @class.Contains("warranty") || @class.Contains("protection") || @class.Contains("seguro") || @class.Contains("insurance"))
                 {
                     return true;
                 }
+
+                // Excluir carruseles, recomendaciones, patrocinados, anuncios, productos relacionados y alternativas fuera de stock
+                if (id.Contains("carousel") || id.Contains("recommend") || id.Contains("similar") || id.Contains("related") || id.Contains("sponsored")
+                    || id.Contains("upsell") || id.Contains("fbt") || id.Contains("bought") || id.Contains("viewed") || id.Contains("purchased")
+                    || id.Contains("personalization") || id.Contains("alternative") || id.Contains("recs") || id.Contains("ad-") || id.Contains("widget") || id.Contains("oos")
+                    || id.Contains("cardinstance") || id.Contains("celwidget")
+                    || @class.Contains("carousel") || @class.Contains("recommend") || @class.Contains("similar") || @class.Contains("related") || @class.Contains("sponsored")
+                    || @class.Contains("upsell") || @class.Contains("fbt") || @class.Contains("bought") || @class.Contains("viewed") || @class.Contains("purchased")
+                    || @class.Contains("personalization") || @class.Contains("alternative") || @class.Contains("recs") || @class.Contains("ad-") || @class.Contains("widget") || @class.Contains("oos")
+                    || @class.Contains("cardinstance") || @class.Contains("celwidget"))
+                {
+                    return true;
+                }
+
                 current = current.ParentNode;
                 depth++;
             }
@@ -475,7 +491,7 @@ namespace Teocuitla.Shared.Helpers
                 foreach (var candidate in priceCandidates)
                 {
                     if (candidate.InnerText.Length > 50) continue;
-                    if (IsWarrantyOrAccessory(candidate)) continue;
+                    if (ShouldExcludeNode(candidate)) continue;
                     var match = PriceRegex.Match(candidate.InnerText);
                     if (match.Success)
                     {
@@ -500,7 +516,7 @@ namespace Teocuitla.Shared.Helpers
                     var txt = node.InnerText.Trim();
                     if (txt.Length < 30)
                     {
-                        if (node.ParentNode != null && IsWarrantyOrAccessory(node.ParentNode)) continue;
+                        if (node.ParentNode != null && ShouldExcludeNode(node.ParentNode)) continue;
                         var match = PriceRegex.Match(txt);
                         if (match.Success)
                         {

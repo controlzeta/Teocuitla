@@ -10,53 +10,143 @@
 <PageTitle>Catálogo de Productos - Teocuitla</PageTitle>
 
 <!-- WIDGET: OPORTUNIDADES DE DESCUENTO -->
-@if (_descuentos.Count > 0)
+@if (_allDescuentos.Count > 0)
 {
     <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default mb-6" Style="background: linear-gradient(135deg, rgba(0, 93, 171, 0.05) 0%, rgba(212, 175, 55, 0.05) 100%);">
-        <div class="d-flex align-center gap-2 mb-3">
-            <MudIcon Icon="@Icons.Material.Filled.LocalFireDepartment" Color="Color.Warning" />
-            <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">🔥 Oportunidades de Descuento</MudText>
-            <MudText Typo="Typo.caption" Class="text-muted d-none d-sm-inline">Artículos de tu catálogo con mayor bajada de precio.</MudText>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.LocalFireDepartment" Color="Color.Warning" />
+                <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">🔥 Oportunidades de Descuento</MudText>
+                <MudText Typo="Typo.caption" Class="text-muted d-none d-sm-inline">Artículos de tu catálogo con mayor bajada de precio.</MudText>
+            </div>
+            
+            <!-- Botones de Ordenamiento -->
+            <div class="d-flex align-center gap-1 flex-wrap">
+                <MudText Typo="Typo.caption" Class="font-bold mr-1">Ordenar por:</MudText>
+                <MudButton Variant="@(_descuentoSortBy == "descuento" ? Variant.Filled : Variant.Outlined)"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           OnClick="@(() => OnDescuentoSortChanged("descuento"))"
+                           StartIcon="@Icons.Material.Filled.TrendingDown"
+                           Class="font-bold">
+                    % Descuento
+                </MudButton>
+                <MudButton Variant="@(_descuentoSortBy == "ahorro" ? Variant.Filled : Variant.Outlined)"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           OnClick="@(() => OnDescuentoSortChanged("ahorro"))"
+                           StartIcon="@Icons.Material.Filled.AttachMoney"
+                           Class="font-bold">
+                    Ahorro ($)
+                </MudButton>
+                <MudButton Variant="@(_descuentoSortBy == "precio_asc" ? Variant.Filled : Variant.Outlined)"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           OnClick="@(() => OnDescuentoSortChanged("precio_asc"))"
+                           StartIcon="@Icons.Material.Filled.ArrowDownward"
+                           Class="font-bold">
+                    Precio Bajo
+                </MudButton>
+                <MudButton Variant="@(_descuentoSortBy == "precio_desc" ? Variant.Filled : Variant.Outlined)"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           OnClick="@(() => OnDescuentoSortChanged("precio_desc"))"
+                           StartIcon="@Icons.Material.Filled.ArrowUpward"
+                           Class="font-bold">
+                    Precio Alto
+                </MudButton>
+            </div>
         </div>
-        <MudGrid Spacing="2">
-            @foreach (var item in _descuentos)
-            {
-                <MudItem xs="12" sm="6" md="3">
-                    <MudCard Outlined="true" Class="border border-solid mud-border-default h-100 hover-card" Style="background: var(--mud-palette-surface); cursor: pointer;" @onclick="() => OnProductoSelected(item.Producto)">
-                        <MudCardContent Class="pa-3">
-                            <div class="d-flex align-center gap-3">
-                                @if (!string.IsNullOrEmpty(item.ImagenUrl))
-                                {
-                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
-                                        <img src="@item.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen" />
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: var(--mud-palette-background-grey); flex-shrink: 0;">
-                                        <MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Size="Size.Small" />
-                                    </div>
-                                }
-                                <div style="min-width: 0; flex-grow: 1; text-align: left;">
-                                    <div class="d-flex align-center justify-space-between mb-1">
-                                        <span class="badge-site" style="font-size: 9px; padding: 1px 4px; background: var(--mud-palette-background-grey); border-radius: 3px;">@item.SitioNombre</span>
-                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 10px;">
-                                            -@($"{item.DescuentoPorcentaje:F0}%")
-                                        </span>
-                                    </div>
-                                    <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text" Style="max-width: 100%;">@item.Nombre</MudText>
-                                    
-                                    <div class="d-flex align-center gap-2 mt-1">
-                                        <span style="text-decoration: line-through; color: #888888; font-size: 11px;">$@($"{item.PrecioAnterior:N2}")</span>
-                                        <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 13px;">$@($"{item.PrecioActual:N2}")</span>
+
+        <!-- Fila de Filtros de Oportunidades -->
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4 pa-2 rounded" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
+            <div class="d-flex align-center gap-2 flex-wrap">
+                <!-- Filtro de Tienda -->
+                <MudSelect T="int?" Value="_descuentoFilterSitioId" Label="Tienda" Dense="true" Margin="Margin.Dense" Style="width: 150px; background: rgba(0,0,0,0.15);" ValueChanged="OnDescuentoSitioFilterChanged">
+                    <MudSelectItem T="int?" Value="null">Todas las Tiendas</MudSelectItem>
+                    @foreach (var sitio in _sitios)
+                    {
+                        <MudSelectItem T="int?" Value="@(sitio.Id)">@sitio.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <!-- Filtro de Categoría -->
+                <MudSelect T="string" Value="_descuentoFilterCategoria" Label="Categoría" Dense="true" Margin="Margin.Dense" Style="width: 160px; background: rgba(0,0,0,0.15);" ValueChanged="OnDescuentoCategoriaFilterChanged">
+                    <MudSelectItem T="string" Value="null">Todas las Categorías</MudSelectItem>
+                    @foreach (var cat in _categorias)
+                    {
+                        <MudSelectItem T="string" Value="@cat">@cat</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            <!-- Filtro Solo en Stock -->
+            <MudChip T="bool" 
+                     Selected="_descuentoFilterSoloStock" 
+                     SelectedColor="Color.Success" 
+                     Color="Color.Default"
+                     Variant="Variant.Filled"
+                     Size="Size.Small"
+                     OnClick="ToggleDescuentoStockFilter"
+                     Class="font-bold">
+                @( _descuentoFilterSoloStock ? "✔️ Solo con Stock" : "Solo con Stock" )
+            </MudChip>
+        </div>
+
+        @if (_descuentos.Count == 0)
+        {
+            <div class="text-center py-6 text-muted">
+                No hay oportunidades de descuento que coincidan con los filtros seleccionados.
+            </div>
+        }
+        else
+        {
+            <MudGrid Spacing="2">
+                @foreach (var item in _descuentos)
+                {
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudCard Outlined="true" Class="border border-solid mud-border-default h-100 hover-card" Style="background: var(--mud-palette-surface); cursor: pointer;" @onclick="() => OnProductoSelected(item.Producto)">
+                            <MudCardContent Class="pa-3">
+                                <div class="d-flex align-center gap-3">
+                                    @if (!string.IsNullOrEmpty(item.ImagenUrl))
+                                    {
+                                        <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
+                                            <img src="@item.ImagenUrl" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Imagen" />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 50px; height: 50px; background: var(--mud-palette-background-grey); flex-shrink: 0;">
+                                            <MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Size="Size.Small" />
+                                        </div>
+                                    }
+                                    <div style="min-width: 0; flex-grow: 1; text-align: left;">
+                                        <div class="d-flex align-center justify-space-between mb-1">
+                                            <span class="badge-site" style="font-size: 9px; padding: 1px 4px; background: var(--mud-palette-background-grey); border-radius: 3px;">@item.SitioNombre</span>
+                                            <div class="d-flex align-center gap-1">
+                                                @if (!item.EnStock)
+                                                {
+                                                    <span style="font-size: 9px; color: var(--mud-palette-error); font-weight: bold;">Sin Stock</span>
+                                                }
+                                                <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 10px;">
+                                                    -@($"{item.DescuentoPorcentaje:F0}%")
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <MudText Typo="Typo.subtitle2" Class="font-bold truncate-text" Style="max-width: 100%;">@item.Nombre</MudText>
+                                        
+                                        <div class="d-flex align-center gap-2 mt-1">
+                                            <span style="text-decoration: line-through; color: #888888; font-size: 11px;">$@($"{item.PrecioAnterior:N2}")</span>
+                                            <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 13px;">$@($"{item.PrecioActual:N2}")</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </MudCardContent>
-                    </MudCard>
-                </MudItem>
-            }
-        </MudGrid>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
     </MudPaper>
 }
 
@@ -628,11 +718,18 @@
     private List<ProductoMaestro> _productos = new();
     private List<CatalogoSitio> _sitios = new();
     private List<string> _categorias = new();
+    private List<DescuentoItem> _allDescuentos = new();
     private List<DescuentoItem> _descuentos = new();
     private bool _loadingProductos = true;
     private string _searchQuery = string.Empty;
     private int? _selectedSitioId;
     private string? _selectedCategoria;
+
+    // Filtros y ordenamiento para Oportunidades de Descuento
+    private string _descuentoSortBy = "descuento"; // "descuento", "ahorro", "precio_asc", "precio_desc"
+    private int? _descuentoFilterSitioId;
+    private string? _descuentoFilterCategoria;
+    private bool _descuentoFilterSoloStock = false;
 
     // Rediseño: Vistas y Ordenamiento
     private bool _isGridView = true;
@@ -1224,20 +1321,93 @@
         var rawDescuentos = await context.VariantesComerciales
             .Include(v => v.ProductoMaestro)
             .Include(v => v.CatalogoSitio)
-            .Where(v => v.PrecioActual.HasValue && v.PrecioAnterior.HasValue && v.PrecioActual.Value < v.PrecioAnterior.Value)
+            .Where(v => v.Activo && v.PrecioActual.HasValue && v.PrecioAnterior.HasValue && v.PrecioActual.Value < v.PrecioAnterior.Value)
             .OrderByDescending(v => (v.PrecioAnterior!.Value - v.PrecioActual!.Value) / v.PrecioAnterior!.Value)
-            .Take(4)
+            .Take(50)
             .ToListAsync();
 
-        _descuentos = rawDescuentos.Select(v => new DescuentoItem
+        _allDescuentos = rawDescuentos.Select(v => new DescuentoItem
         {
             Producto = v.ProductoMaestro!,
             Nombre = v.ProductoMaestro!.Nombre,
             SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda",
+            SitioId = v.CatalogoSitioId,
+            Categoria = v.ProductoMaestro!.Categoria,
             PrecioAnterior = v.PrecioAnterior!.Value,
             PrecioActual = v.PrecioActual!.Value,
-            ImagenUrl = v.ImagenUrl
+            ImagenUrl = v.ImagenUrl,
+            EnStock = v.EnStock
         }).ToList();
+
+        ApplyDescuentosFilters();
+    }
+
+    private void OnDescuentoSortChanged(string mode)
+    {
+        _descuentoSortBy = mode;
+        ApplyDescuentosFilters();
+    }
+
+    private void OnDescuentoSitioFilterChanged(int? sitioId)
+    {
+        _descuentoFilterSitioId = sitioId;
+        ApplyDescuentosFilters();
+    }
+
+    private void OnDescuentoCategoriaFilterChanged(string cat)
+    {
+        _descuentoFilterCategoria = cat;
+        ApplyDescuentosFilters();
+    }
+
+    private void ToggleDescuentoStockFilter()
+    {
+        _descuentoFilterSoloStock = !_descuentoFilterSoloStock;
+        ApplyDescuentosFilters();
+    }
+
+    private void ApplyDescuentosFilters()
+    {
+        var query = _allDescuentos.AsQueryable();
+
+        // 1. Filtrar por Tienda
+        if (_descuentoFilterSitioId.HasValue)
+        {
+            query = query.Where(d => d.SitioId == _descuentoFilterSitioId.Value);
+        }
+
+        // 2. Filtrar por Categoría
+        if (!string.IsNullOrEmpty(_descuentoFilterCategoria))
+        {
+            query = query.Where(d => d.Categoria != null && d.Categoria.Equals(_descuentoFilterCategoria, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 3. Filtrar por Stock
+        if (_descuentoFilterSoloStock)
+        {
+            query = query.Where(d => d.EnStock);
+        }
+
+        // 4. Ordenamiento
+        if (_descuentoSortBy == "descuento")
+        {
+            query = query.OrderByDescending(d => d.DescuentoPorcentaje);
+        }
+        else if (_descuentoSortBy == "ahorro")
+        {
+            query = query.OrderByDescending(d => d.PrecioAnterior - d.PrecioActual);
+        }
+        else if (_descuentoSortBy == "precio_asc")
+        {
+            query = query.OrderBy(d => d.PrecioActual);
+        }
+        else if (_descuentoSortBy == "precio_desc")
+        {
+            query = query.OrderByDescending(d => d.PrecioActual);
+        }
+
+        // Tomar hasta 8 elementos para mostrar en la rejilla de oportunidades
+        _descuentos = query.Take(8).ToList();
     }
     private async Task ActualizarPrecioOnline(VarianteComercial v)
     {
@@ -1304,10 +1474,13 @@
         public ProductoMaestro Producto { get; set; } = null!;
         public string Nombre { get; set; } = string.Empty;
         public string SitioNombre { get; set; } = string.Empty;
+        public int SitioId { get; set; }
+        public string Categoria { get; set; } = string.Empty;
         public decimal PrecioAnterior { get; set; }
         public decimal PrecioActual { get; set; }
         public decimal DescuentoPorcentaje => PrecioAnterior > 0 ? ((PrecioAnterior - PrecioActual) / PrecioAnterior) * 100 : 0;
         public string? ImagenUrl { get; set; }
+        public bool EnStock { get; set; }
     }
 }
 

@@ -253,6 +253,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function deleteVariant(id) {
+    updateStatus('Eliminando producto...', '');
+
+    chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+      const apiUrl = config.apiUrl || 'https://localhost:7192';
+      const apiKey = config.apiKey || 'TeocuitlaDefaultApiKeySecret';
+
+      if (!apiUrl || !apiKey) {
+        updateStatus('Configura la URL del Servidor y API Key.', 'error');
+        return;
+      }
+
+      const cleanApiUrl = apiUrl.replace(/\/$/, '');
+      const endpointDelete = `${cleanApiUrl}/api/ingestion/variants/${id}`;
+      const endpointPost = `${cleanApiUrl}/api/ingestion/variants/${id}/delete`;
+
+      const sendDeleteRequest = (method, endpoint) => {
+        return fetch(endpoint, {
+          method: method,
+          headers: {
+            'X-Api-Key': apiKey
+          }
+        });
+      };
+
+      sendDeleteRequest('DELETE', endpointDelete)
+      .then(response => {
+        if (response.status === 405) {
+          // Reintentar con método POST si el servidor/proxy bloquea DELETE (405 Method Not Allowed)
+          return sendDeleteRequest('POST', endpointPost);
+        }
+        return response;
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Código ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        updateStatus(data.message || 'Producto eliminado exitosamente.', 'success');
+        loadPendingVariants();
+      })
+      .catch(err => {
+        updateStatus(`Error al eliminar producto: ${err.message}`, 'error');
+      });
+    });
+  }
+
   function renderVariants(variants) {
     if (!variants || variants.length === 0) {
       variantList.innerHTML = '<div class="no-variants">No hay productos en catálogo o todos están al día.</div>';
@@ -298,6 +347,9 @@ document.addEventListener('DOMContentLoaded', () => {
       info.appendChild(name);
       info.appendChild(meta);
 
+      const actionsContainer = document.createElement('div');
+      actionsContainer.className = 'variant-actions';
+
       const actionBtn = document.createElement('button');
       actionBtn.className = 'variant-action-btn';
       actionBtn.innerText = 'Visitar';
@@ -307,8 +359,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'variant-delete-btn';
+      deleteBtn.innerHTML = '🗑️';
+      deleteBtn.title = 'Eliminar del catálogo';
+      deleteBtn.addEventListener('click', () => {
+        const confirmMsg = `¿Estás seguro de que deseas eliminar "${variant.nombre || 'este producto'}" del catálogo?`;
+        if (confirm(confirmMsg)) {
+          deleteVariant(variant.id);
+        }
+      });
+
+      actionsContainer.appendChild(actionBtn);
+      actionsContainer.appendChild(deleteBtn);
+
       item.appendChild(info);
-      item.appendChild(actionBtn);
+      item.appendChild(actionsContainer);
 
       item.addEventListener('mouseenter', () => {
         item.style.backgroundColor = '#161616';

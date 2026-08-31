@@ -54,6 +54,17 @@ function extractSku(url, jsonLdProduct) {
     sku = String(sku).replace(/sku\s*:\s*/i, '').trim();
   }
 
+  // 4.5. Intentar regex en el DOM/HTML (para scripts SSR de MercadoLibre y otros)
+  if (!sku) {
+    const htmlText = document.documentElement ? document.documentElement.innerHTML : '';
+    const matchMeli = htmlText.match(/"(?:user_product_id|catalog_product_id)"\s*:\s*"(MLM[A-Z0-9]+)"/i) ||
+                      htmlText.match(/\/up\/(MLM[A-Z0-9]+)/i) ||
+                      htmlText.match(/\/p\/(MLM[A-Z0-9]+)/i);
+    if (matchMeli) {
+      sku = matchMeli[1];
+    }
+  }
+
   // 5. Intentar regex en URL
   if (!sku) {
     const skuMatch = url.match(/\/up\/(MLM[A-Z0-9]+)/i) ||
@@ -77,21 +88,22 @@ function extractSku(url, jsonLdProduct) {
 }
 
 function isPageOutOfStock() {
-  const text = document.body ? document.body.innerText.toLowerCase() : '';
-  if (text.includes('este producto no está disponible') ||
-      text.includes('publicación pausada') ||
-      text.includes('producto no disponible') ||
-      text.includes('sin stock') ||
-      text.includes('agotado') ||
-      text.includes('out of stock') ||
-      text.includes('sold out') ||
-      text.includes('no disponible')) {
+  const htmlText = document.documentElement ? document.documentElement.innerHTML.toLowerCase() : '';
+  if (htmlText.includes('"pdp_type":"no_stock"') ||
+      htmlText.includes('"has_stock":false') ||
+      htmlText.includes('este producto no está disponible') ||
+      htmlText.includes('publicación pausada') ||
+      htmlText.includes('producto no disponible') ||
+      htmlText.includes('sin stock') ||
+      htmlText.includes('agotado') ||
+      htmlText.includes('out of stock') ||
+      htmlText.includes('sold out')) {
     return true;
   }
   const noStockMsg = document.querySelector('.ui-pdp-message') || 
                      document.querySelector('[class*="no-stock"]') || 
                      document.querySelector('.ui-pdp-buybox .ui-message');
-  if (noStockMsg && /no está disponible|agotado|pausada|sin stock/i.test(noStockMsg.innerText)) {
+  if (noStockMsg && /no está disponible|agotado|pausada|sin stock/i.test(noStockMsg.textContent || noStockMsg.innerText)) {
     return true;
   }
   return false;
@@ -102,9 +114,11 @@ function extractProductData() {
   let domain = window.location.hostname.replace('www.', '');
 
   if (window.location.protocol === 'file:') {
-    // Resolver URL real desde canonical o og:url
-    const canonical = document.querySelector('link[rel="canonical"]') || document.querySelector('meta[property="og:url"]');
-    const resolvedUrl = canonical ? (canonical.href || canonical.content) : '';
+    // Resolver URL real desde canonical o og:url usando getAttribute para no relativizar a file:///
+    const canonicalLink = document.querySelector('link[rel="canonical"]');
+    const ogUrlMeta = document.querySelector('meta[property="og:url"]');
+    const resolvedUrl = canonicalLink?.getAttribute('href') || ogUrlMeta?.getAttribute('content') || '';
+
     if (resolvedUrl && resolvedUrl.startsWith('http')) {
       url = resolvedUrl;
       try {

@@ -204,6 +204,18 @@ namespace Teocuitla.Shared.Helpers
                                 resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Omitida: No se detectó ningún enlace de producto en la tarjeta.");
                                 continue;
                             }
+
+                            // Evitar registrar páginas de categorías como productos (especialmente para Costco con /c/)
+                            bool isCostcoUrl = (sitio.UrlBase != null && sitio.UrlBase.Contains("costco", StringComparison.OrdinalIgnoreCase)) ||
+                                               (link.Contains("costco", StringComparison.OrdinalIgnoreCase));
+
+                            if (link.Contains("/c/", StringComparison.OrdinalIgnoreCase) ||
+                                (isCostcoUrl && !link.Contains("/p/", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                resultadoGlobal.Diagnosticos.Add($"[Pág {pagina} - Tarjeta #{cardIndex}] Omitida: El enlace corresponde a una página de categoría: {link}");
+                                continue;
+                            }
+
                             link = MakeAbsoluteUrl(link, sitio.UrlBase);
 
                             // Extraer Nombre (con decodificación y limpieza de insignias/ruido de promoción)

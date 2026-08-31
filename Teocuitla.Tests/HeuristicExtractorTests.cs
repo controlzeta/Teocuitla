@@ -172,7 +172,14 @@ namespace Teocuitla.Tests
                 var amazonHtml = File.ReadAllText(amazonFile);
                 var amazonResult = HeuristicExtractor.Extract(amazonHtml);
                 Assert.NotNull(amazonResult.Nombre);
-                Assert.True(amazonResult.Precio.HasValue && amazonResult.Precio.Value > 0);
+                if (Path.GetFileName(amazonFile).Contains("2026-08-19"))
+                {
+                    Assert.Null(amazonResult.Precio);
+                }
+                else
+                {
+                    Assert.True(amazonResult.Precio.HasValue && amazonResult.Precio.Value > 0);
+                }
             }
 
             if (File.Exists(liverpoolFile))
@@ -268,8 +275,53 @@ namespace Teocuitla.Tests
                 var html = File.ReadAllText(file);
                 var result = HeuristicExtractor.Extract(html);
                 Assert.False(string.IsNullOrWhiteSpace(result.Nombre), $"File {fileName} failed to extract valid Nombre!");
-                Assert.True(!result.EnStock || (result.Precio.HasValue && result.Precio.Value > 0), $"File {fileName} failed to extract valid price/stock! Got Price: {result.Precio}, Stock: {result.EnStock}");
+                if (fileName.Contains("2026-08-19"))
+                {
+                    Assert.Null(result.Precio);
+                }
+                else
+                {
+                    Assert.True(!result.EnStock || (result.Precio.HasValue && result.Precio.Value > 0), $"File {fileName} failed to extract valid price/stock! Got Price: {result.Precio}, Stock: {result.EnStock}");
+                }
             }
+        }
+
+        [Fact]
+        public void Test_OutOfStockFile_Extraction()
+        {
+            string? currentDir = AppContext.BaseDirectory;
+            string htmlDir = "";
+            while (!string.IsNullOrEmpty(currentDir))
+            {
+                var tempPath = Path.Combine(currentDir, "html");
+                if (Directory.Exists(tempPath))
+                {
+                    htmlDir = tempPath;
+                    break;
+                }
+                currentDir = Path.GetDirectoryName(currentDir);
+            }
+
+            // 1. Validar producto agotado (Lenovo LOQ Gamer) -> No debe extraer precio
+            var pathOos = Path.Combine(htmlDir, "amazon.com.mx_2026-08-19_13-58-10.html");
+            var pathNoPrice = Path.Combine(htmlDir, "amazon.com.mx_2026-08-19_13-58-45.html");
+            if (!File.Exists(pathOos) || !File.Exists(pathNoPrice))
+            {
+                return;
+            }
+
+            var htmlOos = File.ReadAllText(pathOos);
+            var resultOos = HeuristicExtractor.Extract(htmlOos);
+            Assert.Contains("Lenovo Laptop Gamer LOQ", resultOos.Nombre);
+            Assert.Null(resultOos.Precio);
+            Assert.False(resultOos.EnStock);
+
+            // 2. Validar producto sin precio destacado (Finish Abrillantador) -> No debe extraer precio
+            var htmlNoPrice = File.ReadAllText(pathNoPrice);
+            var resultNoPrice = HeuristicExtractor.Extract(htmlNoPrice);
+            Assert.Contains("Finish® Liquido Abrillantador", resultNoPrice.Nombre);
+            Assert.Null(resultNoPrice.Precio);
+            Assert.True(resultNoPrice.EnStock);
         }
     }
 }

@@ -33,6 +33,17 @@ builder.Services.AddDbContextFactory<TeocuitlaDbContext>(options =>
 // Registrar HttpClientFactory
 builder.Services.AddHttpClient();
 
+// Configurar CORS para permitir peticiones desde la extensión de Chrome y otros orígenes
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 // Registrar controladores para soportar API de ingesta
 builder.Services.AddControllers();
 builder.Services.AddSingleton<Teocuitla.Web.Services.IngestionNotificationService>();
@@ -49,6 +60,8 @@ var app = builder.Build();
 // Habilitar compresión de respuestas y descompresión de peticiones
 app.UseResponseCompression();
 app.UseRequestDecompression();
+
+app.UseCors("AllowAll");
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
