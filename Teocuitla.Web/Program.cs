@@ -33,6 +33,11 @@ builder.Services.AddDbContextFactory<TeocuitlaDbContext>(options =>
 // Registrar HttpClientFactory
 builder.Services.AddHttpClient();
 
+// Configurar AiSettings y servicio de prompts con IA
+builder.Services.Configure<Teocuitla.Shared.Models.AiSettings>(
+    builder.Configuration.GetSection("AiSettings"));
+builder.Services.AddHttpClient<Teocuitla.Shared.Services.IAiPromptService, Teocuitla.Shared.Services.AiPromptService>();
+
 // Configurar CORS para permitir peticiones desde la extensión de Chrome y otros orígenes
 builder.Services.AddCors(options =>
 {
@@ -47,6 +52,7 @@ builder.Services.AddCors(options =>
 // Registrar controladores para soportar API de ingesta
 builder.Services.AddControllers();
 builder.Services.AddSingleton<Teocuitla.Web.Services.IngestionNotificationService>();
+
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()

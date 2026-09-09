@@ -1,0 +1,389 @@
+@using MudBlazor
+@using Teocuitla.Shared.Services
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject IAiPromptService AiPromptService
+
+<MudDialog Class="ai-insights-dialog">
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 pb-2 border-b border-solid mud-border-default">
+            <div class="d-flex align-center gap-3">
+                <div class="ai-avatar-icon">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Surface" Size="Size.Medium" />
+                </div>
+                <div>
+                    <div class="d-flex align-center gap-2">
+                        <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">
+                            Insights AI
+                        </MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Class="font-mono text-xs px-2">
+                            @SelectedProvider
+                        </MudChip>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="text-muted">
+                        Evaluación matemática y financiera de las mejores oportunidades de compra.
+                    </MudText>
+                </div>
+            </div>
+
+            <!-- SELECTOR DE PROVEEDOR EN CALIENTE -->
+            <div class="d-flex align-center gap-2">
+                <MudSelect T="string" 
+                           Value="SelectedProvider" 
+                           ValueChanged="OnProviderChanged" 
+                           Dense="true" 
+                           Margin="Margin.Dense" 
+                           Variant="Variant.Outlined" 
+                           Disabled="IsLoading"
+                           Label="Proveedor"
+                           Style="width: 140px; font-size: 0.85rem;">
+                    <MudSelectItem Value="@("Gemini")">Google Gemini</MudSelectItem>
+                    <MudSelectItem Value="@("OpenAI")">OpenAI (ChatGPT)</MudSelectItem>
+                    <MudSelectItem Value="@("Claude")">Anthropic Claude</MudSelectItem>
+                </MudSelect>
+
+                <MudTooltip Text="Regenerar análisis con el proveedor actual">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" 
+                                   Color="Color.Primary" 
+                                   Size="Size.Small" 
+                                   Disabled="IsLoading" 
+                                   OnClick="ReintentarAnalisisAsync" />
+                </MudTooltip>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (IsLoading)
+        {
+            <div class="d-flex flex-column align-center justify-center py-12 gap-4">
+                <div class="ai-pulse-container">
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Large" Indeterminate="true" StrokeWidth="4" />
+                    <MudIcon Icon="@Icons.Material.Filled.Psychology" Color="Color.Primary" Class="ai-pulse-icon" />
+                </div>
+                <div class="text-center">
+                    <MudText Typo="Typo.subtitle1" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">
+                        Consultando a @SelectedProvider...
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="text-muted mt-1">
+                        Comparando caídas de precio con medias históricas de @AnalyzedCount productos para descartar precios inflados.
+                    </MudText>
+                </div>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <MudPaper Outlined="true" Class="pa-4 my-2 border border-solid border-error rounded" Style="background: rgba(244, 67, 54, 0.04);">
+                <div class="d-flex align-start gap-3">
+                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Large" Class="mt-1" />
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.subtitle1" Class="font-bold text-error">
+                            No se pudo obtener el análisis de @SelectedProvider
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1 break-all" Style="color: var(--mud-palette-text-primary);">
+                            @ErrorMessage
+                        </MudText>
+
+                        @if (ErrorMessage.Contains("ApiKey", StringComparison.OrdinalIgnoreCase) || ErrorMessage.Contains("401") || ErrorMessage.Contains("403"))
+                        {
+                            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mt-3 py-1">
+                                Verifica que la clave API esté configurada en <strong>appsettings.json</strong> bajo <code>AiSettings:@(SelectedProvider)ApiKey</code> o intenta cambiar de proveedor arriba.
+                            </MudAlert>
+                        }
+
+                        <div class="d-flex gap-2 mt-4">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReintentarAnalisisAsync">
+                                Reintentar Ahora
+                            </MudButton>
+                        </div>
+                    </div>
+                </div>
+            </MudPaper>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-3 py-2" style="max-height: 68vh; overflow-y: auto; padding-right: 4px;">
+                
+                <!-- TARJETAS PARSEADAS SI DETECTA EL FORMATO SOLICITADO -->
+                @if (HasStructuredSections)
+                {
+                    @if (!string.IsNullOrEmpty(SeccionMejorOferta))
+                    {
+                        <div class="ai-hero-card pa-4 rounded border border-solid">
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <span style="font-size: 1.3rem;">🏆</span>
+                                <MudText Typo="Typo.subtitle1" Class="font-bold text-warning" Style="letter-spacing: 0.5px;">
+                                    LA MEJOR OPORTUNIDAD
+                                </MudText>
+                            </div>
+                            <MudText Typo="Typo.h6" Class="font-bold" Style="font-family: 'Outfit', sans-serif;">
+                                @SeccionMejorOferta
+                            </MudText>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(SeccionNumeros))
+                    {
+                        <MudPaper Outlined="true" Class="pa-3 rounded border border-solid mud-border-default" Style="background: rgba(33, 150, 243, 0.04);">
+                            <div class="d-flex align-center gap-2 mb-1">
+                                <MudIcon Icon="@Icons.Material.Filled.QueryStats" Color="Color.Info" Size="Size.Small" />
+                                <MudText Typo="Typo.subtitle2" Class="font-bold text-info">Análisis Numérico y Descuento Real</MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="font-mono text-sm" Style="line-height: 1.6;">
+                                @((MarkupString)FormatMarkdown(SeccionNumeros))
+                            </MudText>
+                        </MudPaper>
+                    }
+
+                    @if (!string.IsNullOrEmpty(SeccionInsights))
+                    {
+                        <MudPaper Outlined="true" Class="pa-4 rounded border border-solid mud-border-default" Style="background: var(--mud-palette-surface);">
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Color="Color.Warning" Size="Size.Small" />
+                                <MudText Typo="Typo.subtitle2" Class="font-bold">Razones Financieras de Compra</MudText>
+                            </div>
+                            <div class="ai-bullets" style="line-height: 1.7; font-size: 0.95rem;">
+                                @((MarkupString)FormatMarkdown(SeccionInsights))
+                            </div>
+                        </MudPaper>
+                    }
+
+                    @if (!string.IsNullOrEmpty(SeccionMencion))
+                    {
+                        <div class="pa-3 rounded border border-solid" style="background: rgba(255, 152, 0, 0.05); border-color: rgba(255, 152, 0, 0.2);">
+                            <div class="d-flex align-center gap-2">
+                                <span style="font-size: 1.1rem;">🥈</span>
+                                <div>
+                                    <MudText Typo="Typo.caption" Class="font-bold text-warning d-block">MENCIÓN HONORÍFICA (ALTERNATIVA)</MudText>
+                                    <MudText Typo="Typo.body2" Class="font-medium">@((MarkupString)FormatMarkdown(SeccionMencion))</MudText>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <!-- RENDERIZADO GENÉRICO ELEGANTE SI EL MODELO FORMATEÓ DE FORMA DIFERENTE -->
+                    <MudPaper Outlined="true" Class="pa-4 border border-solid mud-border-default rounded" Style="background: var(--mud-palette-surface);">
+                        <div class="ai-insight-content" style="white-space: pre-wrap; line-height: 1.7; font-size: 0.95rem;">
+                            @((MarkupString)FormatMarkdown(RawResponse))
+                        </div>
+                    </MudPaper>
+                }
+
+                <!-- DATASET AUDITABLE (COLLAPSIBLE) -->
+                @if (!string.IsNullOrEmpty(DatasetSummary))
+                {
+                    <details class="mt-2" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px 12px; cursor: pointer;">
+                        <summary class="text-caption font-bold text-muted d-flex align-center justify-space-between">
+                            <span>📋 Ver dataset de @AnalyzedCount productos evaluados por la IA</span>
+                            <span class="font-mono text-xs">Formato tabular</span>
+                        </summary>
+                        <div class="mt-2 pt-2 border-t border-solid border-white-10">
+                            <pre class="text-xs font-mono pa-2 rounded" style="background: rgba(0, 0, 0, 0.3); white-space: pre-wrap; word-break: break-all; color: #a0aec0; max-height: 150px; overflow-y: auto;">@DatasetSummary</pre>
+                        </div>
+                    </details>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <div class="d-flex justify-space-between align-center w-100 px-2">
+            <div>
+                @if (!IsLoading && !string.IsNullOrEmpty(RawResponse))
+                {
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Default" 
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.ContentCopy" 
+                               OnClick="CopyResponseAsync">
+                        Copiar Análisis
+                    </MudButton>
+                }
+            </div>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Cerrar">
+                Cerrar
+            </MudButton>
+        </div>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .ai-avatar-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #1976d2 0%, #7b1fa2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(123, 31, 162, 0.3);
+    }
+    .ai-pulse-container {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 80px;
+        height: 80px;
+    }
+    .ai-pulse-icon {
+        position: absolute;
+        font-size: 28px;
+        opacity: 0.8;
+    }
+    .ai-hero-card {
+        background: linear-gradient(135deg, rgba(255, 193, 7, 0.08) 0%, rgba(25, 118, 210, 0.08) 100%);
+        border-color: rgba(255, 193, 7, 0.3) !important;
+        border-left: 4px solid #ffb300 !important;
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public bool IsLoading { get; set; }
+
+    [Parameter]
+    public string RawResponse { get; set; } = string.Empty;
+
+    [Parameter]
+    public string ErrorMessage { get; set; } = string.Empty;
+
+    [Parameter]
+    public string DatasetSummary { get; set; } = string.Empty;
+
+    [Parameter]
+    public string FullPrompt { get; set; } = string.Empty;
+
+    [Parameter]
+    public int AnalyzedCount { get; set; }
+
+    [Parameter]
+    public string SelectedProvider { get; set; } = "Gemini";
+
+    // Secciones parseadas
+    private string SeccionMejorOferta = string.Empty;
+    private string SeccionNumeros = string.Empty;
+    private string SeccionInsights = string.Empty;
+    private string SeccionMencion = string.Empty;
+    private bool HasStructuredSections => !string.IsNullOrEmpty(SeccionMejorOferta) || !string.IsNullOrEmpty(SeccionInsights);
+
+    protected override void OnParametersSet()
+    {
+        ParseStructuredResponse();
+    }
+
+    private void ParseStructuredResponse()
+    {
+        if (string.IsNullOrWhiteSpace(RawResponse))
+        {
+            SeccionMejorOferta = "";
+            SeccionNumeros = "";
+            SeccionInsights = "";
+            SeccionMencion = "";
+            return;
+        }
+
+        try
+        {
+            var text = RawResponse;
+
+            // Extraer "La Mejor Oferta"
+            var matchOferta = System.Text.RegularExpressions.Regex.Match(text, @"\*\*\s*🏆\s*La Mejor Oferta:\s*\*\*\s*([^\n\r*]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (matchOferta.Success)
+            {
+                SeccionMejorOferta = matchOferta.Groups[1].Value.Trim();
+            }
+
+            // Extraer "Los Números"
+            var matchNumeros = System.Text.RegularExpressions.Regex.Match(text, @"\*\*\s*📊\s*Los Números:\s*\*\*\s*([^\*]+?)(?=\n\s*\*|\Z)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (matchNumeros.Success)
+            {
+                SeccionNumeros = matchNumeros.Groups[1].Value.Trim();
+            }
+
+            // Extraer "Insights de Compra"
+            var matchInsights = System.Text.RegularExpressions.Regex.Match(text, @"\*\*\s*💡\s*Insights de Compra:\s*\*\*\s*([^\*]+?)(?=\n\s*\*|\Z)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (matchInsights.Success)
+            {
+                SeccionInsights = matchInsights.Groups[1].Value.Trim();
+            }
+
+            // Extraer "Mención Honorífica"
+            var matchMencion = System.Text.RegularExpressions.Regex.Match(text, @"\*\*\s*🥈\s*Mención Honorífica:\s*\*\*\s*([^\n\r]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (matchMencion.Success)
+            {
+                SeccionMencion = matchMencion.Groups[1].Value.Trim();
+            }
+        }
+        catch
+        {
+            // Fallback a vista normal
+        }
+    }
+
+    private async Task OnProviderChanged(string newProvider)
+    {
+        SelectedProvider = newProvider;
+        await ReintentarAnalisisAsync();
+    }
+
+    private async Task ReintentarAnalisisAsync()
+    {
+        if (string.IsNullOrWhiteSpace(FullPrompt)) return;
+
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        RawResponse = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            RawResponse = await AiPromptService.ExecutePromptAsync(FullPrompt, providerOverride: SelectedProvider);
+            ParseStructuredResponse();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatMarkdown(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+
+        var html = System.Net.WebUtility.HtmlEncode(markdown);
+        
+        // Negritas
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        html = System.Text.RegularExpressions.Regex.Replace(html, @"\*(.+?)\*", "<em>$1</em>");
+        
+        // Viñetas estilizadas
+        html = html.Replace("\n* ", "<br/>• ").Replace("\n- ", "<br/>• ");
+        html = html.Replace("\n", "<br/>");
+
+        return html;
+    }
+
+    private async Task CopyResponseAsync()
+    {
+        if (!string.IsNullOrEmpty(RawResponse))
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", RawResponse);
+            Snackbar.Add("Análisis copiado al portapapeles.", Severity.Info);
+        }
+    }
+
+    private void Cerrar()
+    {
+        MudDialog.Close();
+    }
+}
+

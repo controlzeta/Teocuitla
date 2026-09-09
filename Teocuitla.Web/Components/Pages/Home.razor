@@ -42,7 +42,7 @@
 
 <!-- CARDS DE ESTADÍSTICAS RÁPIDAS -->
 <MudGrid Class="mb-6">
-    <MudItem xs="6" sm="3">
+    <MudItem xs="6" sm="4" md="2" Class="flex-grow-1">
         <MudPaper Outlined="true" 
                   Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
                   Style="background: var(--mud-palette-surface);"
@@ -62,7 +62,7 @@
             <MudText Typo="Typo.caption" Class="text-primary font-bold mt-1 d-block" Style="font-size: 0.65rem;">Configurar sitios →</MudText>
         </MudPaper>
     </MudItem>
-    <MudItem xs="6" sm="3">
+    <MudItem xs="6" sm="4" md="2" Class="flex-grow-1">
         <MudPaper Outlined="true" 
                   Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
                   Style="background: var(--mud-palette-surface);"
@@ -82,7 +82,7 @@
             <MudText Typo="Typo.caption" Class="text-secondary font-bold mt-1 d-block" Style="font-size: 0.65rem;">Ver catálogo →</MudText>
         </MudPaper>
     </MudItem>
-    <MudItem xs="6" sm="3">
+    <MudItem xs="6" sm="4" md="2" Class="flex-grow-1">
         <MudPaper Outlined="true" 
                   Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
                   Style="background: var(--mud-palette-surface);"
@@ -102,7 +102,27 @@
             <MudText Typo="Typo.caption" Class="text-info font-bold mt-1 d-block" Style="font-size: 0.65rem;">Administrar enlaces →</MudText>
         </MudPaper>
     </MudItem>
-    <MudItem xs="6" sm="3">
+    <MudItem xs="6" sm="4" md="2" Class="flex-grow-1">
+        <MudPaper Outlined="true" 
+                  Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
+                  Style="background: var(--mud-palette-surface);"
+                  @onclick='@(() => Navigation.NavigateTo("/catalogo?sinRefrescar=true"))'>
+            <MudIcon Icon="@Icons.Material.Filled.UpdateDisabled" Color="Color.Warning" Size="Size.Medium" Class="mb-2" />
+            @if (_totalSinRefrescarHoy == null)
+            {
+                <div class="d-flex justify-center my-1">
+                    <MudProgressCircular Color="Color.Warning" Size="Size.Small" Indeterminate="true" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalSinRefrescarHoy</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="text-muted d-block">Sin Refrescar Hoy</MudText>
+            <MudText Typo="Typo.caption" Class="text-warning font-bold mt-1 d-block" Style="font-size: 0.65rem;">Ver pendientes →</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="4" md="2" Class="flex-grow-1">
         <MudPaper Outlined="true" 
                   Class="pa-4 border border-solid mud-border-default text-center h-100 dashboard-card-clickable" 
                   Style="background: var(--mud-palette-surface);"
@@ -433,6 +453,7 @@
     private int? _totalSitios;
     private int? _totalProductos;
     private int? _totalEnlaces;
+    private int? _totalSinRefrescarHoy;
     private long? _totalHistorial;
     private int? _proxiesActivos;
     private int? _latenciaPromedio;
@@ -466,6 +487,7 @@
         _totalSitios = null;
         _totalProductos = null;
         _totalEnlaces = null;
+        _totalSinRefrescarHoy = null;
         _totalHistorial = null;
         _proxiesActivos = null;
         _latenciaPromedio = null;
@@ -530,6 +552,22 @@
                 }
             }
             catch { _totalEnlaces = 0; }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // 3.5. Sin Refrescar Hoy
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                context.Database.SetCommandTimeout(5);
+                var today = DateTime.Today;
+                _totalSinRefrescarHoy = await context.VariantesComerciales
+                    .AsNoTracking()
+                    .CountAsync(v => v.Activo && (v.UltimaActualizacion == null || v.UltimaActualizacion < today));
+            }
+            catch { _totalSinRefrescarHoy = 0; }
             await InvokeAsync(StateHasChanged);
         });
 

@@ -6,8 +6,10 @@
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
 @inject IHttpClientFactory HttpClientFactory
+@inject Teocuitla.Shared.Services.IAiPromptService AiPromptService
 
 <PageTitle>Catálogo de Productos - Teocuitla</PageTitle>
+
 
 <!-- WIDGET: OPORTUNIDADES DE DESCUENTO -->
 @if (_allDescuentos.Count > 0)
@@ -20,8 +22,27 @@
                 <MudText Typo="Typo.caption" Class="text-muted d-none d-sm-inline">Artículos de tu catálogo con mayor bajada de precio.</MudText>
             </div>
             
-            <!-- Botones de Ordenamiento -->
+            <!-- Botones de Acción y Ordenamiento -->
             <div class="d-flex align-center gap-1 flex-wrap">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           OnClick="AbrirAiInsightsAsync"
+                           Disabled="_isAnalyzingAi"
+                           StartIcon="@(_isAnalyzingAi ? null : Icons.Material.Filled.AutoAwesome)"
+                           Class="font-bold mr-2"
+                           Style="background: linear-gradient(135deg, #1976d2 0%, #7b1fa2 100%);">
+                    @if (_isAnalyzingAi)
+                    {
+                        <MudProgressCircular Color="Color.Inherit" Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                        <span>Analizando...</span>
+                    }
+                    else
+                    {
+                        <span>Insights AI</span>
+                    }
+                </MudButton>
+
                 <MudText Typo="Typo.caption" Class="font-bold mr-1">Ordenar por:</MudText>
                 <MudButton Variant="@(_descuentoSortBy == "descuento" ? Variant.Filled : Variant.Outlined)"
                            Color="Color.Warning"
@@ -57,6 +78,7 @@
                 </MudButton>
             </div>
         </div>
+
 
         <!-- Fila de Filtros de Oportunidades -->
         <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4 pa-2 rounded" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
@@ -146,6 +168,30 @@
                     </MudItem>
                 }
             </MudGrid>
+
+            <!-- Controles de Paginación para Oportunidades -->
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mt-4 pt-3 border-t border-solid mud-border-default">
+                <div class="d-flex align-center gap-3 flex-wrap">
+                    <MudText Typo="Typo.caption" Class="text-muted font-bold">
+                        Mostrando @((_descuentoPage - 1) * _descuentoPageSize + 1) - @(Math.Min(_descuentoPage * _descuentoPageSize, _descuentoTotalItems)) de @_descuentoTotalItems oportunidades
+                    </MudText>
+                    <div class="d-flex align-center gap-1">
+                        <MudText Typo="Typo.caption" Class="text-muted">Por página:</MudText>
+                        <MudSelect T="int" Value="_descuentoPageSize" ValueChanged="OnDescuentoPageSizeChanged" Dense="true" Margin="Margin.Dense" Style="width: 75px; background: rgba(0,0,0,0.15);">
+                            <MudSelectItem Value="4">4</MudSelectItem>
+                            <MudSelectItem Value="8">8</MudSelectItem>
+                            <MudSelectItem Value="12">12</MudSelectItem>
+                            <MudSelectItem Value="16">16</MudSelectItem>
+                            <MudSelectItem Value="24">24</MudSelectItem>
+                        </MudSelect>
+                    </div>
+                </div>
+
+                @if (_descuentoTotalPages > 1)
+                {
+                    <MudPagination Count="@_descuentoTotalPages" Selected="_descuentoPage" SelectedChanged="OnDescuentoPageChanged" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" />
+                }
+            </div>
         }
     </MudPaper>
 }
@@ -220,12 +266,15 @@
     </div>
 
     <!-- FILTROS RÁPIDOS TOGGLES -->
-    <div class="d-flex align-center gap-2 mt-2 pt-2 border-t border-solid mud-border-default">
+    <div class="d-flex align-center gap-2 mt-2 pt-2 border-t border-solid mud-border-default flex-wrap">
         <MudChip T="bool" Variant="@(_filterSoloOfertas ? Variant.Filled : Variant.Outlined)" Color="Color.Success" OnClick="@(async () => { _filterSoloOfertas = !_filterSoloOfertas; await LoadProductos(); })" Size="Size.Small" Class="font-bold">
             🔥 Solo con Descuento
         </MudChip>
         <MudChip T="bool" Variant="@(_filterSoloStock ? Variant.Filled : Variant.Outlined)" Color="Color.Info" OnClick="@(async () => { _filterSoloStock = !_filterSoloStock; await LoadProductos(); })" Size="Size.Small" Class="font-bold">
             📦 Solo en Stock
+        </MudChip>
+        <MudChip T="bool" Variant="@(_filterSinRefrescarHoy ? Variant.Filled : Variant.Outlined)" Color="Color.Warning" OnClick="@(async () => { _filterSinRefrescarHoy = !_filterSinRefrescarHoy; await LoadProductos(); })" Size="Size.Small" Class="font-bold">
+            ⏳ Sin Refrescar Hoy (@_totalSinRefrescarHoy)
         </MudChip>
     </div>
 </MudPaper>
@@ -715,6 +764,10 @@
     [SupplyParameterFromQuery(Name = "search")]
     public string? UrlSearch { get; set; }
 
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "sinRefrescar")]
+    public bool UrlSinRefrescar { get; set; }
+
     private List<ProductoMaestro> _productos = new();
     private List<CatalogoSitio> _sitios = new();
     private List<string> _categorias = new();
@@ -725,17 +778,23 @@
     private int? _selectedSitioId;
     private string? _selectedCategoria;
 
-    // Filtros y ordenamiento para Oportunidades de Descuento
+    // Filtros, ordenamiento y paginación para Oportunidades de Descuento
     private string _descuentoSortBy = "descuento"; // "descuento", "ahorro", "precio_asc", "precio_desc"
     private int? _descuentoFilterSitioId;
     private string? _descuentoFilterCategoria;
     private bool _descuentoFilterSoloStock = false;
+    private int _descuentoPage = 1;
+    private int _descuentoPageSize = 8;
+    private int _descuentoTotalItems = 0;
+    private int _descuentoTotalPages => Math.Max(1, (int)Math.Ceiling((double)_descuentoTotalItems / _descuentoPageSize));
 
     // Rediseño: Vistas y Ordenamiento
     private bool _isGridView = true;
     private string _sortBy = "nombre"; // "nombre", "descuento", "precio_asc", "precio_desc"
     private bool _filterSoloOfertas = false;
     private bool _filterSoloStock = false;
+    private bool _filterSinRefrescarHoy = false;
+    private int _totalSinRefrescarHoy = 0;
     
     private ProductoMaestro? _selectedProducto;
     private List<VarianteComercial> _variantes = new();
@@ -775,6 +834,10 @@
         await LoadSitios();
         await LoadCategorias();
         await LoadDescuentos();
+        if (UrlSinRefrescar)
+        {
+            _filterSinRefrescarHoy = true;
+        }
         if (!string.IsNullOrEmpty(UrlSearch))
         {
             _searchQuery = UrlSearch;
@@ -784,9 +847,19 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        bool shouldReload = false;
         if (UrlSearch != null && UrlSearch != _searchQuery)
         {
             _searchQuery = UrlSearch;
+            shouldReload = true;
+        }
+        if (UrlSinRefrescar != _filterSinRefrescarHoy)
+        {
+            _filterSinRefrescarHoy = UrlSinRefrescar;
+            shouldReload = true;
+        }
+        if (shouldReload)
+        {
             await LoadProductos();
         }
     }
@@ -837,6 +910,12 @@
             query = query.Where(p => p.Variantes.Any(v => v.EnStock));
         }
 
+        if (_filterSinRefrescarHoy)
+        {
+            var today = DateTime.Today;
+            query = query.Where(p => p.Variantes.Any(v => v.Activo && (v.UltimaActualizacion == null || v.UltimaActualizacion < today)));
+        }
+
         var rawList = await query.ToListAsync();
 
         _productos = _sortBy switch
@@ -846,6 +925,11 @@
             "descuento" => rawList.OrderByDescending(p => p.Variantes.Select(v => (v.PrecioAnterior.HasValue && v.PrecioAnterior > v.PrecioActual && v.PrecioActual.HasValue) ? (double)((v.PrecioAnterior.Value - v.PrecioActual.Value) / v.PrecioAnterior.Value) : 0).DefaultIfEmpty(0).Max()).ToList(),
             _ => rawList.OrderBy(p => p.Nombre).ToList()
         };
+
+        var todayDate = DateTime.Today;
+        _totalSinRefrescarHoy = await context.VariantesComerciales
+            .AsNoTracking()
+            .CountAsync(v => v.Activo && (v.UltimaActualizacion == null || v.UltimaActualizacion < todayDate));
 
         // Calcular conteos para filtros (faceted counts)
         _sitioCounts = _productos
@@ -1323,46 +1407,163 @@
             .Include(v => v.CatalogoSitio)
             .Where(v => v.Activo && v.PrecioActual.HasValue && v.PrecioAnterior.HasValue && v.PrecioActual.Value < v.PrecioAnterior.Value)
             .OrderByDescending(v => (v.PrecioAnterior!.Value - v.PrecioActual!.Value) / v.PrecioAnterior!.Value)
-            .Take(50)
             .ToListAsync();
 
-        _allDescuentos = rawDescuentos.Select(v => new DescuentoItem
-        {
-            Producto = v.ProductoMaestro!,
-            Nombre = v.ProductoMaestro!.Nombre,
-            SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda",
-            SitioId = v.CatalogoSitioId,
-            Categoria = v.ProductoMaestro!.Categoria,
-            PrecioAnterior = v.PrecioAnterior!.Value,
-            PrecioActual = v.PrecioActual!.Value,
-            ImagenUrl = v.ImagenUrl,
-            EnStock = v.EnStock
+        var varianteIds = rawDescuentos.Select(v => v.Id).ToList();
+        var promedios = await context.HistorialPrecios
+            .Where(h => varianteIds.Contains(h.VarianteComercialId))
+            .GroupBy(h => h.VarianteComercialId)
+            .Select(g => new { VarianteId = g.Key, Promedio = g.Average(x => x.Precio) })
+            .ToDictionaryAsync(x => x.VarianteId, x => (decimal)x.Promedio);
+
+        _allDescuentos = rawDescuentos.Select(v => {
+            decimal precioMedio = promedios.TryGetValue(v.Id, out var media) && media > 0 
+                ? media 
+                : (v.PrecioAnterior.HasValue && v.PrecioActual.HasValue ? (v.PrecioAnterior.Value + v.PrecioActual.Value) / 2m : v.PrecioActual ?? 0);
+
+            return new DescuentoItem
+            {
+                VarianteId = v.Id,
+                Producto = v.ProductoMaestro!,
+                Nombre = v.ProductoMaestro!.Nombre,
+                SitioNombre = v.CatalogoSitio != null ? v.CatalogoSitio.Nombre : "Tienda",
+                SitioId = v.CatalogoSitioId,
+                Categoria = v.ProductoMaestro!.Categoria,
+                PrecioAnterior = v.PrecioAnterior!.Value,
+                PrecioActual = v.PrecioActual!.Value,
+                PrecioMedio = precioMedio,
+                ImagenUrl = v.ImagenUrl,
+                EnStock = v.EnStock
+            };
         }).ToList();
 
+        _descuentoPage = 1;
         ApplyDescuentosFilters();
     }
+
+    private bool _isAnalyzingAi = false;
+
+    private async Task AbrirAiInsightsAsync()
+    {
+        // Tomar hasta los 8 productos actualmente visibles/filtrados en oportunidades
+        var topItems = _descuentos.Take(8).ToList();
+        if (topItems.Count == 0)
+        {
+            topItems = _allDescuentos.Take(8).ToList();
+        }
+
+        if (topItems.Count == 0)
+        {
+            Snackbar.Add("No hay oportunidades de descuento disponibles para analizar.", Severity.Warning);
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var item in topItems)
+        {
+            sb.AppendLine($"{item.Nombre} | {item.SitioNombre} | ${item.PrecioMedio:N2} | ${item.PrecioActual:N2} | {item.DescuentoPorcentaje:F1}%");
+        }
+        var datasetStr = sb.ToString().TrimEnd();
+
+        var promptFinal = $@"Actúa como un experto en e-commerce y analista de datos financieros. Tu objetivo es analizar el siguiente set de datos y determinar de manera objetiva cuál es la mejor oportunidad de compra.
+
+**Criterios de evaluación:**
+1. No te guíes únicamente por el ""Porcentaje de descuento"". Evalúa si el descuento es real o si el precio base estaba inflado.
+2. Calcula y prioriza la diferencia absoluta (ahorro real en dinero) comparando el ""Precio Actual"" frente al ""Precio Medio"" histórico.
+3. Encuentra el punto óptimo entre la mejor caída de precio respecto a la media y un porcentaje de descuento significativo.
+
+**Formato de salida esperado:**
+* **🏆 La Mejor Oferta:** [Nombre del artículo ganador].
+* **📊 Los Números:** Muestra la relación entre el Precio Medio, Precio Actual, el ahorro neto y el Porcentaje de descuento.
+* **💡 Insights de Compra:** Explica en 3 viñetas por qué esta es la decisión matemáticamente más inteligente (ej. caída por debajo del soporte histórico, mayor valor retenido por cada peso gastado).
+* **🥈 Mención Honorífica:** Nombra la segunda mejor opción en caso de que la primera no esté disponible.
+
+**Datos a analizar:**
+{datasetStr}";
+
+        _isAnalyzingAi = true;
+        StateHasChanged();
+
+        try
+        {
+            var activeProvider = AiPromptService.Settings.ActiveProvider;
+            var aiResponse = await AiPromptService.ExecutePromptAsync(promptFinal);
+
+            var parameters = new DialogParameters<AiInsightsDialog>
+            {
+                { x => x.IsLoading, false },
+                { x => x.RawResponse, aiResponse },
+                { x => x.DatasetSummary, datasetStr },
+                { x => x.FullPrompt, promptFinal },
+                { x => x.SelectedProvider, activeProvider },
+                { x => x.AnalyzedCount, topItems.Count }
+            };
+
+            var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+            await DialogService.ShowAsync<AiInsightsDialog>("Análisis de Oportunidades", parameters, options);
+        }
+        catch (Exception ex)
+        {
+            var activeProvider = AiPromptService.Settings.ActiveProvider;
+            var parameters = new DialogParameters<AiInsightsDialog>
+            {
+                { x => x.IsLoading, false },
+                { x => x.ErrorMessage, ex.Message },
+                { x => x.DatasetSummary, datasetStr },
+                { x => x.FullPrompt, promptFinal },
+                { x => x.SelectedProvider, activeProvider },
+                { x => x.AnalyzedCount, topItems.Count }
+            };
+
+            var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+            await DialogService.ShowAsync<AiInsightsDialog>("Error en Análisis de IA", parameters, options);
+        }
+        finally
+        {
+            _isAnalyzingAi = false;
+            StateHasChanged();
+        }
+    }
+
 
     private void OnDescuentoSortChanged(string mode)
     {
         _descuentoSortBy = mode;
+        _descuentoPage = 1;
         ApplyDescuentosFilters();
     }
 
     private void OnDescuentoSitioFilterChanged(int? sitioId)
     {
         _descuentoFilterSitioId = sitioId;
+        _descuentoPage = 1;
         ApplyDescuentosFilters();
     }
 
     private void OnDescuentoCategoriaFilterChanged(string cat)
     {
         _descuentoFilterCategoria = cat;
+        _descuentoPage = 1;
         ApplyDescuentosFilters();
     }
 
     private void ToggleDescuentoStockFilter()
     {
         _descuentoFilterSoloStock = !_descuentoFilterSoloStock;
+        _descuentoPage = 1;
+        ApplyDescuentosFilters();
+    }
+
+    private void OnDescuentoPageChanged(int page)
+    {
+        _descuentoPage = page;
+        ApplyDescuentosFilters();
+    }
+
+    private void OnDescuentoPageSizeChanged(int pageSize)
+    {
+        _descuentoPageSize = pageSize;
+        _descuentoPage = 1;
         ApplyDescuentosFilters();
     }
 
@@ -1406,8 +1607,22 @@
             query = query.OrderByDescending(d => d.PrecioActual);
         }
 
-        // Tomar hasta 8 elementos para mostrar en la rejilla de oportunidades
-        _descuentos = query.Take(8).ToList();
+        var filteredList = query.ToList();
+        _descuentoTotalItems = filteredList.Count;
+
+        if (_descuentoPage > _descuentoTotalPages)
+        {
+            _descuentoPage = _descuentoTotalPages;
+        }
+        if (_descuentoPage < 1)
+        {
+            _descuentoPage = 1;
+        }
+
+        _descuentos = filteredList
+            .Skip((_descuentoPage - 1) * _descuentoPageSize)
+            .Take(_descuentoPageSize)
+            .ToList();
     }
     private async Task ActualizarPrecioOnline(VarianteComercial v)
     {
@@ -1471,6 +1686,7 @@
 
     private class DescuentoItem
     {
+        public int VarianteId { get; set; }
         public ProductoMaestro Producto { get; set; } = null!;
         public string Nombre { get; set; } = string.Empty;
         public string SitioNombre { get; set; } = string.Empty;
@@ -1478,11 +1694,13 @@
         public string Categoria { get; set; } = string.Empty;
         public decimal PrecioAnterior { get; set; }
         public decimal PrecioActual { get; set; }
+        public decimal PrecioMedio { get; set; }
         public decimal DescuentoPorcentaje => PrecioAnterior > 0 ? ((PrecioAnterior - PrecioActual) / PrecioAnterior) * 100 : 0;
         public string? ImagenUrl { get; set; }
         public bool EnStock { get; set; }
     }
 }
+
 
 <style>
     .mud-list-item-icon {

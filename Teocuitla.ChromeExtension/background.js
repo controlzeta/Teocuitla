@@ -72,9 +72,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         },
         body: JSON.stringify(productData)
       })
-      .then(response => {
+      .then(async response => {
         if (!response.ok) {
-          throw new Error(`Error en servidor: ${response.status} ${response.statusText}`);
+          let errorText = '';
+          try {
+            errorText = await response.text();
+          } catch (e) {
+            errorText = response.statusText;
+          }
+          throw new Error(`Error en servidor (${response.status}): ${errorText || response.statusText}`);
         }
         return response.json();
       })
@@ -82,6 +88,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log('[Teocuitla] Ingesta exitosa del producto:', data);
         const statusMsg = `Ingestado: SKU ${productData.sku}`;
         chrome.runtime.sendMessage({ action: 'ingestStatus', success: true, message: statusMsg }).catch(() => {});
+
 
         const notificationPayload = {
           action: 'showIngestNotification',

@@ -8,10 +8,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore.Storage;
+using Serilog.Context;
 using Teocuitla.Shared.Dtos;
 using Teocuitla.Shared.Data;
 using Teocuitla.Shared.Models;
 using Teocuitla.Shared.Helpers;
+
 
 namespace Teocuitla.Web.Controllers
 {
@@ -201,176 +203,213 @@ namespace Teocuitla.Web.Controllers
             dto.UrlProducto = DataNormalizer.CleanProductUrl(dto.UrlProducto);
             dto.ImagenUrl = DataNormalizer.NormalizeImageUrl(DataNormalizer.MakeAbsoluteUrl(dto.ImagenUrl, dto.UrlProducto));
 
-            _logger.LogInformation("Recibiendo ingesta de producto desde extensión: SKU={Sku}, Dominio={Dominio}", dto.Sku, dto.Dominio);
-
-            try
+            // Enriquecer el contexto de Serilog para que cualquier log o excepción contenga estas propiedades estructuradas
+            using (LogContext.PushProperty("ProductSKU", dto.Sku))
+            using (LogContext.PushProperty("UrlProducto", dto.UrlProducto))
+            using (LogContext.PushProperty("Dominio", dto.Dominio))
             {
-                using (var transaction = await _context.Database.BeginTransactionAsync())
+                _logger.LogInformation("Recibiendo ingesta de producto desde extensión: {@Dto}", new
                 {
-                    // 1. Resolver o crear el sitio de catálogo
-                    var baseDomain = dto.Dominio.ToLower().Trim();
-                    var site = await _context.CatalogoSitios
-                        .Where(s => s.UrlBase != null && s.UrlBase.Contains(baseDomain))
-                        .OrderBy(s => s.Id)
-                        .FirstOrDefaultAsync();
+                    dto.Sku,
+                    dto.Nombre,
+                    dto.UrlProducto,
+                    dto.Precio,
+                    dto.Dominio,
+                    dto.Marca,
+                    dto.ImagenUrl,
+                    dto.SelectorNombreXPath,
+                    dto.SelectorPrecioXPath,
+                    dto.SelectorImagenXPath
+                });
 
-                    if (site == null)
+                try
+                {
+                    // Truncar preventivamente para evitar SqlException por longitud máxima de columnas de base de datos
+                    var safeNombre = dto.Nombre ?? string.Empty;
+                    if (safeNombre.Length > 300) safeNombre = safeNombre.Substring(0, 300);
+
+                    var safeSku = dto.Sku ?? string.Empty;
+                    if (safeSku.Length > 100) safeSku = safeSku.Substring(0, 100);
+
+                    var safeMarca = dto.Marca ?? "Genérica";
+                    if (safeMarca.Length > 100) safeMarca = safeMarca.Substring(0, 100);
+
+                    var safeUrl = dto.UrlProducto ?? string.Empty;
+                    if (safeUrl.Length > 1000) safeUrl = safeUrl.Substring(0, 1000);
+
+                    var safeImagen = dto.ImagenUrl;
+                    if (safeImagen != null && safeImagen.Length > 1000) safeImagen = safeImagen.Substring(0, 1000);
+
+                    using (var transaction = await _context.Database.BeginTransactionAsync())
                     {
-                        _logger.LogWarning("La extensión intentó enviar datos para un sitio no registrado en la base de datos: {Dominio}", baseDomain);
-                        return BadRequest($"El sitio con dominio '{baseDomain}' no existe en la base de datos.");
-                    }
-
-                    // Auto-aprendizaje/corrección de selectores a partir de la extensión
-                    bool siteUpdated = false;
-                    if (!string.IsNullOrEmpty(dto.SelectorNombreXPath) && site.SelectorNombreXPath != dto.SelectorNombreXPath)
-                    {
-                        site.SelectorNombreXPath = dto.SelectorNombreXPath;
-                        siteUpdated = true;
-                    }
-                    if (!string.IsNullOrEmpty(dto.SelectorPrecioXPath) && site.SelectorPrecioXPath != dto.SelectorPrecioXPath)
-                    {
-                        site.SelectorPrecioXPath = dto.SelectorPrecioXPath;
-                        siteUpdated = true;
-                    }
-                    if (!string.IsNullOrEmpty(dto.SelectorImagenXPath) && site.SelectorImagenXPath != dto.SelectorImagenXPath)
-                    {
-                        site.SelectorImagenXPath = dto.SelectorImagenXPath;
-                        siteUpdated = true;
-                    }
-
-                    if (siteUpdated)
-                    {
-                        _context.CatalogoSitios.Update(site);
-                        await _context.SaveChangesAsync();
-                        _logger.LogInformation("Selectores corregidos/actualizados automáticamente para el sitio {Nombre} desde la extensión.", site.Nombre);
-                    }
-
-                    // 2. Buscar variante comercial existente por URL limpia, SKU o coincidencia de URL
-                    var cleanDtoUrl = DataNormalizer.CleanProductUrl(dto.UrlProducto);
-                    var cleanDtoSku = DataNormalizer.NormalizeSku(dto.Sku);
-
-                    var allVariantsInSite = await _context.VariantesComerciales
-                        .Where(v => v.CatalogoSitioId == site.Id || v.CatalogoSitioId == null)
-                        .ToListAsync();
-
-                    var matchingVariants = allVariantsInSite.Where(v => 
-                        (!string.IsNullOrEmpty(v.UrlProducto) && DataNormalizer.CleanProductUrl(v.UrlProducto).Equals(cleanDtoUrl, StringComparison.OrdinalIgnoreCase)) ||
-                        (!string.IsNullOrEmpty(v.Sku) && (
-                            v.Sku.Equals(cleanDtoSku, StringComparison.OrdinalIgnoreCase) ||
-                            (cleanDtoSku.Length >= 4 && v.Sku.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
-                            (v.Sku.Length >= 4 && cleanDtoSku.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
-                        )) ||
-                        (!string.IsNullOrEmpty(v.UrlProducto) && (
-                            (!string.IsNullOrEmpty(cleanDtoSku) && cleanDtoSku.Length >= 4 && v.UrlProducto.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
-                            (!string.IsNullOrEmpty(v.Sku) && v.Sku.Length >= 4 && cleanDtoUrl.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
-                        ))
-                    ).ToList();
-
-                    var variant = matchingVariants
-                        .OrderByDescending(v => v.UltimaActualizacion.HasValue)
-                        .ThenByDescending(v => v.UltimaActualizacion)
-                        .ThenBy(v => v.Id)
-                        .FirstOrDefault();
-
-                    bool priceChanged = false;
-
-                    if (variant != null)
-                    {
-                        priceChanged = variant.PrecioActual != dto.Precio || variant.EnStock != (dto.Precio > 0);
-
-                        // Actualizar fecha y datos en todas las variantes coincidentes registradas para quitar de pendientes
-                        foreach (var mVar in matchingVariants)
-                        {
-                            mVar.PrecioAnterior = mVar.PrecioActual;
-                            mVar.PrecioActual = dto.Precio;
-                            mVar.EnStock = dto.Precio > 0;
-                            mVar.UltimaActualizacion = DateTime.Now;
-                            mVar.UrlProducto = cleanDtoUrl;
-                            if (!string.IsNullOrEmpty(dto.ImagenUrl) && string.IsNullOrEmpty(mVar.ImagenUrl))
-                            {
-                                mVar.ImagenUrl = dto.ImagenUrl;
-                            }
-                            if (!mVar.Activo)
-                            {
-                                mVar.Activo = true;
-                            }
-                            _context.VariantesComerciales.Update(mVar);
-                        }
-
-                        await _context.SaveChangesAsync();
-                    }
-                    else
-                    {
-                        priceChanged = true;
-
-                        // Buscar si existe un producto maestro por nombre y marca
-                        var masterProduct = await _context.ProductosMaestros
-                            .Where(p => p.Nombre == dto.Nombre && p.Marca == dto.Marca)
-                            .OrderBy(p => p.Id)
+                        // 1. Resolver el sitio de catálogo
+                        var baseDomain = dto.Dominio.ToLower().Trim();
+                        var site = await _context.CatalogoSitios
+                            .Where(s => s.UrlBase != null && s.UrlBase.Contains(baseDomain))
+                            .OrderBy(s => s.Id)
                             .FirstOrDefaultAsync();
 
-                        if (masterProduct == null)
+                        if (site == null)
                         {
-                            masterProduct = new ProductoMaestro
+                            _logger.LogWarning("La extensión intentó enviar datos para un sitio no registrado en la base de datos: Dominio={Dominio}, Sku={Sku}, Url={Url}", baseDomain, dto.Sku, dto.UrlProducto);
+                            return BadRequest($"El sitio con dominio '{baseDomain}' no existe en la base de datos.");
+                        }
+
+                        // Auto-aprendizaje/corrección de selectores a partir de la extensión
+                        bool siteUpdated = false;
+                        if (!string.IsNullOrEmpty(dto.SelectorNombreXPath) && site.SelectorNombreXPath != dto.SelectorNombreXPath)
+                        {
+                            site.SelectorNombreXPath = dto.SelectorNombreXPath.Length > 500 ? dto.SelectorNombreXPath.Substring(0, 500) : dto.SelectorNombreXPath;
+                            siteUpdated = true;
+                        }
+                        if (!string.IsNullOrEmpty(dto.SelectorPrecioXPath) && site.SelectorPrecioXPath != dto.SelectorPrecioXPath)
+                        {
+                            site.SelectorPrecioXPath = dto.SelectorPrecioXPath.Length > 500 ? dto.SelectorPrecioXPath.Substring(0, 500) : dto.SelectorPrecioXPath;
+                            siteUpdated = true;
+                        }
+                        if (!string.IsNullOrEmpty(dto.SelectorImagenXPath) && site.SelectorImagenXPath != dto.SelectorImagenXPath)
+                        {
+                            site.SelectorImagenXPath = dto.SelectorImagenXPath.Length > 500 ? dto.SelectorImagenXPath.Substring(0, 500) : dto.SelectorImagenXPath;
+                            siteUpdated = true;
+                        }
+
+                        if (siteUpdated)
+                        {
+                            _context.CatalogoSitios.Update(site);
+                            await _context.SaveChangesAsync();
+                            _logger.LogInformation("Selectores corregidos/actualizados automáticamente para el sitio {Nombre} desde la extensión.", site.Nombre);
+                        }
+
+                        // 2. Buscar variante comercial existente por URL limpia, SKU o coincidencia de URL
+                        var cleanDtoUrl = safeUrl;
+                        var cleanDtoSku = safeSku;
+
+                        var allVariantsInSite = await _context.VariantesComerciales
+                            .Where(v => v.CatalogoSitioId == site.Id)
+                            .ToListAsync();
+
+
+                        var matchingVariants = allVariantsInSite.Where(v => 
+                            (!string.IsNullOrEmpty(v.UrlProducto) && DataNormalizer.CleanProductUrl(v.UrlProducto).Equals(cleanDtoUrl, StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrEmpty(v.Sku) && (
+                                v.Sku.Equals(cleanDtoSku, StringComparison.OrdinalIgnoreCase) ||
+                                (cleanDtoSku.Length >= 4 && v.Sku.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
+                                (v.Sku.Length >= 4 && cleanDtoSku.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
+                            )) ||
+                            (!string.IsNullOrEmpty(v.UrlProducto) && (
+                                (!string.IsNullOrEmpty(cleanDtoSku) && cleanDtoSku.Length >= 4 && v.UrlProducto.Contains(cleanDtoSku, StringComparison.OrdinalIgnoreCase)) ||
+                                (!string.IsNullOrEmpty(v.Sku) && v.Sku.Length >= 4 && cleanDtoUrl.Contains(v.Sku, StringComparison.OrdinalIgnoreCase))
+                            ))
+                        ).ToList();
+
+                        var variant = matchingVariants
+                            .OrderByDescending(v => v.UltimaActualizacion.HasValue)
+                            .ThenByDescending(v => v.UltimaActualizacion)
+                            .ThenBy(v => v.Id)
+                            .FirstOrDefault();
+
+                        bool priceChanged = false;
+
+                        if (variant != null)
+                        {
+                            priceChanged = variant.PrecioActual != dto.Precio || variant.EnStock != (dto.Precio > 0);
+
+                            // Actualizar fecha y datos en todas las variantes coincidentes registradas para quitar de pendientes
+                            foreach (var mVar in matchingVariants)
                             {
-                                Nombre = dto.Nombre,
-                                Marca = dto.Marca,
-                                Categoria = "Extensión de Navegador",
-                                Descripcion = "Ingresado mediante extensión de Chrome",
-                                FechaCreacion = DateTime.Now
+                                mVar.PrecioAnterior = mVar.PrecioActual;
+                                mVar.PrecioActual = dto.Precio;
+                                mVar.EnStock = dto.Precio > 0;
+                                mVar.UltimaActualizacion = DateTime.Now;
+                                mVar.UrlProducto = cleanDtoUrl;
+                                if (!string.IsNullOrEmpty(safeImagen) && string.IsNullOrEmpty(mVar.ImagenUrl))
+                                {
+                                    mVar.ImagenUrl = safeImagen;
+                                }
+                                if (!mVar.Activo)
+                                {
+                                    mVar.Activo = true;
+                                }
+                                _context.VariantesComerciales.Update(mVar);
+                            }
+
+                            await _context.SaveChangesAsync();
+                        }
+                        else
+                        {
+                            priceChanged = true;
+
+                            // Buscar si existe un producto maestro por nombre y marca
+                            var masterProduct = await _context.ProductosMaestros
+                                .Where(p => p.Nombre == safeNombre && p.Marca == safeMarca)
+                                .OrderBy(p => p.Id)
+                                .FirstOrDefaultAsync();
+
+                            if (masterProduct == null)
+                            {
+                                masterProduct = new ProductoMaestro
+                                {
+                                    Nombre = safeNombre.Length > 200 ? safeNombre.Substring(0, 200) : safeNombre,
+                                    Marca = safeMarca,
+                                    Categoria = "Extensión de Navegador",
+                                    Descripcion = "Ingresado mediante extensión de Chrome",
+                                    FechaCreacion = DateTime.Now
+                                };
+                                _context.ProductosMaestros.Add(masterProduct);
+                                await _context.SaveChangesAsync();
+                            }
+
+                            // Crear variante
+                            variant = new VarianteComercial
+                            {
+                                ProductoMaestroId = masterProduct.Id,
+                                CatalogoSitioId = site.Id,
+                                Sku = safeSku,
+                                Nombre = safeNombre,
+                                UrlProducto = cleanDtoUrl,
+                                PrecioActual = dto.Precio,
+                                EnStock = dto.Precio > 0,
+                                UltimaActualizacion = DateTime.Now,
+                                ImagenUrl = safeImagen
                             };
-                            _context.ProductosMaestros.Add(masterProduct);
+                            _context.VariantesComerciales.Add(variant);
                             await _context.SaveChangesAsync();
                         }
 
-                        // Crear variante
-                        variant = new VarianteComercial
+                        // 3. Registrar en historial de precios solo si cambió
+                        if (priceChanged)
                         {
-                            ProductoMaestroId = masterProduct.Id,
-                            CatalogoSitioId = site.Id,
-                            Sku = dto.Sku,
-                            Nombre = dto.Nombre,
-                            UrlProducto = cleanDtoUrl,
-                            PrecioActual = dto.Precio,
-                            EnStock = dto.Precio > 0,
-                            UltimaActualizacion = DateTime.Now,
-                            ImagenUrl = dto.ImagenUrl
-                        };
-                        _context.VariantesComerciales.Add(variant);
+                            var history = new HistorialPrecio
+                            {
+                                VarianteComercialId = variant.Id,
+                                Precio = dto.Precio,
+                                EnStock = dto.Precio > 0,
+                                FechaCaptura = DateTime.Now
+                            };
+                            _context.HistorialPrecios.Add(history);
+                        }
+                        
+                        // Actualizar fecha de último rastreo del sitio
+                        site.UltimoRastreo = DateTime.Now;
+                        _context.CatalogoSitios.Update(site);
+
                         await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
                     }
 
-                    // 3. Registrar en historial de precios solo si cambió
-                    if (priceChanged)
-                    {
-                        var history = new HistorialPrecio
-                        {
-                            VarianteComercialId = variant.Id,
-                            Precio = dto.Precio,
-                            EnStock = dto.Precio > 0,
-                            FechaCaptura = DateTime.Now
-                        };
-                        _context.HistorialPrecios.Add(history);
-                    }
-                    
-                    // Actualizar fecha de último rastreo del sitio
-                    site.UltimoRastreo = DateTime.Now;
-                    _context.CatalogoSitios.Update(site);
+                    _notificationService.NotifyIngestion(dto.Sku, dto.Nombre, dto.Precio, dto.Dominio);
 
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
+                    return Ok(new { Message = "Producto ingerido con éxito desde la extensión.", Sku = dto.Sku });
                 }
-
-                _notificationService.NotifyIngestion(dto.Sku, dto.Nombre, dto.Precio, dto.Dominio);
-
-                return Ok(new { Message = "Producto ingerido con éxito desde la extensión.", Sku = dto.Sku });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error al procesar ingesta desde extensión.");
-                return StatusCode(500, $"Error interno: {ex.Message}");
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error al procesar ingesta desde extensión. Datos recibidos: SKU={Sku}, Nombre={Nombre}, Url={Url}, Precio={Precio}, Dominio={Dominio}, Detalle={Error}", 
+                        dto.Sku, dto.Nombre, dto.UrlProducto, dto.Precio, dto.Dominio, ex.Message);
+                    return StatusCode(500, $"Error interno: {ex.Message}");
+                }
             }
         }
+
 
         [HttpGet("sites")]
         public async Task<IActionResult> GetConfiguredSites()

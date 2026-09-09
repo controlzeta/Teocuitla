@@ -29,6 +29,9 @@ namespace Teocuitla.Web.Models
         [JsonPropertyName("SourceContext")]
         public string? SourceContext { get; set; }
 
+        [JsonPropertyName("@x")]
+        public string? Exception { get; set; }
+
         // Propiedad de conveniencia para mapear el nivel de Serilog Compact JSON
         public string Level => CompactLevel switch
         {
@@ -44,3 +47,4 @@ namespace Teocuitla.Web.Models
         public string DisplayMessage => Message ?? MessageTemplate ?? string.Empty;
     }
 }
+

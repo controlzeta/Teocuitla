@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 5. Abrir todos los enlaces cargados de una vez (deduplicando URLs y en segundo plano)
+  // 5. Abrir enlaces cargados en segundo plano (máximo 25 a la vez)
   btnOpenAll.addEventListener('click', () => {
     if (!loadedVariants || loadedVariants.length === 0) {
       updateStatus('No hay productos pendientes para abrir.', 'error');
@@ -156,13 +156,20 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const MAX_TABS = 25;
+    const targetsToOpen = uniqueVariants.slice(0, MAX_TABS);
+
     let openedCount = 0;
-    uniqueVariants.forEach(variant => {
+    targetsToOpen.forEach(variant => {
       chrome.tabs.create({ url: variant.urlProducto, active: false });
       openedCount++;
     });
 
-    updateStatus(`Abiertas ${openedCount} pestañas únicas en segundo plano con éxito.`, 'success');
+    if (uniqueVariants.length > MAX_TABS) {
+      updateStatus(`Abiertas las primeras ${openedCount} pestañas (de ${uniqueVariants.length} pendientes) en segundo plano con éxito.`, 'success');
+    } else {
+      updateStatus(`Abiertas ${openedCount} pestañas únicas en segundo plano con éxito.`, 'success');
+    }
   });
 
   // 6. Escuchar estatus enviado por background.js

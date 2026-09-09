@@ -141,6 +141,14 @@
                     <MudTd DataLabel="Mensaje">
                         <div class="d-flex flex-column gap-1 py-1">
                             <MudText Typo="Typo.body2" Class="font-medium break-all">@context.DisplayMessage</MudText>
+
+                            @if (!string.IsNullOrEmpty(context.Exception))
+                            {
+                                <details class="mt-1" style="cursor: pointer;">
+                                    <summary class="text-caption" style="color: #f44336; font-weight: 600;">Ver detalle de la excepción</summary>
+                                    <pre class="pa-2 mt-1 rounded text-xs font-mono" style="background: rgba(244,67,54,0.08); color: #e53935; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto;">@context.Exception</pre>
+                                </details>
+                            }
                             
                             <!-- ETIQUETAS DE TRAZABILIDAD (Muestra si están presentes en el log estructurado) -->
                             @if (!string.IsNullOrEmpty(context.ProductSKU) || !string.IsNullOrEmpty(context.JobId))
@@ -162,6 +170,7 @@
                             }
                         </div>
                     </MudTd>
+
                 </RowTemplate>
                 <NoRecordsContent>
                     <div class="d-flex flex-column align-center justify-center py-8 text-center">
@@ -259,11 +268,12 @@
             return false;
         }
 
-        // Filtro de búsqueda libre (busca en mensaje, SKU, JobId, TraceId o el Contexto de origen)
+        // Filtro de búsqueda libre (busca en mensaje, excepción, SKU, JobId, TraceId o el Contexto de origen)
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
             var query = _searchQuery.Trim().ToLower();
             bool match = record.DisplayMessage.ToLower().Contains(query) ||
+                         (record.Exception?.ToLower().Contains(query) ?? false) ||
                          (record.ProductSKU?.ToLower().Contains(query) ?? false) ||
                          (record.JobId?.ToLower().Contains(query) ?? false) ||
                          (record.TraceId?.ToLower().Contains(query) ?? false) ||
@@ -273,6 +283,7 @@
         }
 
         return true;
+
     }
 
     private async Task DownloadLogs()
