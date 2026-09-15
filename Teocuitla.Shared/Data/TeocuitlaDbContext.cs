@@ -65,6 +65,11 @@ namespace Teocuitla.Shared.Data
                 .HasIndex(v => v.Sku)
                 .HasDatabaseName("IX_VariantesComerciales_Sku");
 
+            // Configurar índice compuesto de negocio para evitar duplicidad de SKU por sitio
+            modelBuilder.Entity<VarianteComercial>()
+                .HasIndex(v => new { v.CatalogoSitioId, v.Sku })
+                .HasDatabaseName("IX_VariantesComerciales_SitioId_Sku");
+
             modelBuilder.Entity<VarianteComercial>()
                 .Property(v => v.Activo)
                 .HasDefaultValue(true);

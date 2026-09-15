@@ -36,12 +36,19 @@ namespace Teocuitla.Worker.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<ScraperService> _logger;
         private readonly IConfiguration? _configuration;
+        private readonly ISelectorValidationService _selectorValidationService;
 
-        public ScraperService(IHttpClientFactory httpClientFactory, ILogger<ScraperService> logger, IConfiguration? configuration = null)
+        public ScraperService(
+            IHttpClientFactory httpClientFactory,
+            ILogger<ScraperService> logger,
+            IConfiguration? configuration = null,
+            ISelectorValidationService? selectorValidationService = null)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _configuration = configuration;
+            _selectorValidationService = selectorValidationService ?? new SelectorValidationService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<SelectorValidationService>.Instance);
         }
 
         public async Task<ScraperResult> ScrapeAsync(VarianteComercial variante, CatalogoSitio sitio, RegistroProxy? proxy)
@@ -49,25 +56,9 @@ namespace Teocuitla.Worker.Services
             var stopwatch = Stopwatch.StartNew();
             string? recommendedStrategy = null;
 
-            // Validar sintaxis de los selectores si estan configurados
-            if (!string.IsNullOrWhiteSpace(sitio.SelectorPrecioXPath) && !SelectorValidator.IsValidSelector(sitio.SelectorPrecioXPath))
+            // Validar sintaxis de los selectores si están configurados (vía SelectorValidationService)
+            if (!_selectorValidationService.ValidateSiteSelectors(sitio, out _, out _))
             {
-                _logger.LogError("El selector de Precio '{Selector}' para el sitio '{Sitio}' es inválido (sintaxis XPath/CSS incorrecta).", sitio.SelectorPrecioXPath, sitio.Nombre);
-                return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
-            }
-            if (!string.IsNullOrWhiteSpace(sitio.SelectorNombreXPath) && !SelectorValidator.IsValidSelector(sitio.SelectorNombreXPath))
-            {
-                _logger.LogError("El selector de Nombre '{Selector}' para el sitio '{Sitio}' es inválido (sintaxis XPath/CSS incorrecta).", sitio.SelectorNombreXPath, sitio.Nombre);
-                return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
-            }
-            if (!string.IsNullOrWhiteSpace(sitio.SelectorStockXPath) && !SelectorValidator.IsValidSelector(sitio.SelectorStockXPath))
-            {
-                _logger.LogError("El selector de Stock '{Selector}' para el sitio '{Sitio}' es inválido (sintaxis XPath/CSS incorrecta).", sitio.SelectorStockXPath, sitio.Nombre);
-                return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
-            }
-            if (!string.IsNullOrWhiteSpace(sitio.SelectorProductoXPath) && !SelectorValidator.IsValidSelector(sitio.SelectorProductoXPath))
-            {
-                _logger.LogError("El selector de Contenedor '{Selector}' para el sitio '{Sitio}' es inválido (sintaxis XPath/CSS incorrecta).", sitio.SelectorProductoXPath, sitio.Nombre);
                 return new ScraperResult { Exitoso = false, LatenciaMs = 0 };
             }
 
@@ -670,6 +661,18 @@ namespace Teocuitla.Worker.Services
                     HtmlFallido = pageSource,
                     ErrorMensaje = ex.Message
                 };
+            }
+            finally
+            {
+                // Garantizar la terminación explícita del navegador y su proceso chromedriver.exe
+                try
+                {
+                    driver.Quit();
+                }
+                catch (Exception quitEx)
+                {
+                    _logger.LogDebug(quitEx, "Falla no crítica al cerrar ChromeDriver durante driver.Quit().");
+                }
             }
         }
 

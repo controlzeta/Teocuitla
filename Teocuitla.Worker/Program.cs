@@ -38,6 +38,7 @@ builder.Services.AddDbContextFactory<TeocuitlaDbContext>(options =>
 builder.Services.AddHttpClient();
 
 // Registrar servicios de negocio (Transient/Singleton para evitar dependencias cautivas)
+builder.Services.AddTransient<ISelectorValidationService, SelectorValidationService>();
 builder.Services.AddTransient<ProxyService>();
 builder.Services.AddTransient<ScraperService>();
 

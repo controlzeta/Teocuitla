@@ -262,8 +262,55 @@
                 <MudIconButton Icon="@Icons.Material.Filled.GridView" Color="@(_isGridView ? Color.Primary : Color.Default)" Size="Size.Small" OnClick="@(() => _isGridView = true)" Tooltip="Vista en Cuadrícula" />
                 <MudIconButton Icon="@Icons.Material.Filled.ViewList" Color="@(!_isGridView ? Color.Primary : Color.Default)" Size="Size.Small" OnClick="@(() => _isGridView = false)" Tooltip="Vista en Lista" />
             </div>
+
+            <MudButton Variant="@(_isSelectionMode ? Variant.Filled : Variant.Outlined)"
+                       Color="@(_isSelectionMode ? Color.Secondary : Color.Default)"
+                       Size="Size.Small"
+                       OnClick="ToggleSelectionMode"
+                       StartIcon="@(_isSelectionMode ? Icons.Material.Filled.Close : Icons.Material.Filled.Checklist)"
+                       Class="font-bold">
+                @(_isSelectionMode ? "Cancelar Selección" : "Seleccionar")
+            </MudButton>
         </div>
     </div>
+
+    @if (_isSelectionMode)
+    {
+        <!-- BARRA DE CONTROL MODO SELECCIÓN -->
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mt-2 pt-2 border-t border-solid mud-border-default animate-fade" style="background: rgba(var(--mud-palette-secondary-rgb), 0.05); padding: 6px 12px; border-radius: 4px;">
+            <div class="d-flex align-center gap-3">
+                <MudCheckBox T="bool" 
+                             Value="@(_productos.Count > 0 && _selectedProductIds.Count == _productos.Count)" 
+                             ValueChanged="ToggleSelectAll" 
+                             Color="Color.Secondary" 
+                             Dense="true" 
+                             Label="Seleccionar todos los visibles" 
+                             Class="font-bold ma-0" />
+                <MudText Typo="Typo.caption" Class="font-bold text-muted">
+                    (@_selectedProductIds.Count de @_productos.Count seleccionados)
+                </MudText>
+            </div>
+            @if (_selectedProductIds.Count > 0)
+            {
+                <div class="d-flex align-center gap-2">
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Error" 
+                               Size="Size.Small" 
+                               StartIcon="@Icons.Material.Filled.DeleteSweep" 
+                               OnClick="DeleteSelectedBatchAsync"
+                               Class="font-bold">
+                        Eliminar @_selectedProductIds.Count seleccionados
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" 
+                               Color="Color.Default" 
+                               Size="Size.Small" 
+                               OnClick="@(() => _selectedProductIds.Clear())">
+                        Limpiar
+                    </MudButton>
+                </div>
+            }
+        </div>
+    }
 
     <!-- FILTROS RÁPIDOS TOGGLES -->
     <div class="d-flex align-center gap-2 mt-2 pt-2 border-t border-solid mud-border-default flex-wrap">
@@ -304,18 +351,32 @@
                     var minPrecio = prod.Variantes.Where(v => v.PrecioActual.HasValue).Select(v => v.PrecioActual!.Value).DefaultIfEmpty(0).Min();
                     var maxDescuentoPct = prod.Variantes.Select(v => (v.PrecioAnterior.HasValue && v.PrecioAnterior > v.PrecioActual && v.PrecioActual.HasValue) ? (double)((v.PrecioAnterior.Value - v.PrecioActual.Value) / v.PrecioAnterior.Value) * 100 : 0).DefaultIfEmpty(0).Max();
                     var isSelected = _selectedProducto?.Id == prod.Id;
+                    var isChecked = _selectedProductIds.Contains(prod.Id);
 
                     <MudItem xs="12" sm="6">
                         <MudCard Outlined="true" 
-                                 Class='@($"border border-solid mud-border-default h-100 product-grid-card {(isSelected ? "selected-product-item" : "")}")' 
-                                 Style="background: var(--mud-palette-surface);"
+                                 Class='@($"border border-solid mud-border-default h-100 product-grid-card {(isSelected && !_isSelectionMode ? "selected-product-item" : "")} {(isChecked ? "batch-selected-item" : "")}")' 
+                                 Style="background: var(--mud-palette-surface); cursor: pointer;"
                                  @onclick="@(() => OnProductoSelected(prod))">
                             <MudCardContent Class="pa-3">
                                 <div class="d-flex flex-column gap-2">
                                     <div class="d-flex justify-space-between align-start">
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="font-bold pa-0 ma-0" Style="font-size: 0.65rem;">
-                                            @prod.Categoria
-                                        </MudChip>
+                                        <div class="d-flex align-center gap-1">
+                                            @if (_isSelectionMode)
+                                            {
+                                                <span @onclick:stopPropagation="true">
+                                                    <MudCheckBox T="bool" 
+                                                                 Value="isChecked" 
+                                                                 ValueChanged="@((bool val) => ToggleProductSelection(prod.Id))" 
+                                                                 Color="Color.Secondary" 
+                                                                 Dense="true" 
+                                                                 Class="ma-0 pa-0 mr-1" />
+                                                </span>
+                                            }
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="font-bold pa-0 ma-0" Style="font-size: 0.65rem;">
+                                                @prod.Categoria
+                                            </MudChip>
+                                        </div>
                                         @if (maxDescuentoPct > 0)
                                         {
                                             <span style="font-weight: bold; color: var(--mud-palette-success); font-size: 0.7rem; background: rgba(16, 185, 129, 0.15); padding: 1px 6px; border-radius: 4px;">
@@ -367,9 +428,21 @@
                 {
                     var firstImgUrl = prod.Variantes.FirstOrDefault(v => !string.IsNullOrEmpty(v.ImagenUrl))?.ImagenUrl;
                     var isSelected = _selectedProducto?.Id == prod.Id;
-                    <MudListItem Value="prod" Class="@(isSelected ? "selected-product-item border-b border-solid mud-border-default py-2" : "border-b border-solid mud-border-default py-2")">
+                    var isChecked = _selectedProductIds.Contains(prod.Id);
+                    <MudListItem Value="prod" Class='@($"border-b border-solid mud-border-default py-2 {(isSelected && !_isSelectionMode ? "selected-product-item" : "")} {(isChecked ? "batch-selected-item" : "")}")'>
                         <div class="d-flex align-center justify-space-between w-100">
                             <div class="d-flex align-center gap-3" style="min-width: 0;">
+                                @if (_isSelectionMode)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudCheckBox T="bool" 
+                                                     Value="isChecked" 
+                                                     ValueChanged="@((bool val) => ToggleProductSelection(prod.Id))" 
+                                                     Color="Color.Secondary" 
+                                                     Dense="true" 
+                                                     Class="ma-0 pa-0" />
+                                    </span>
+                                }
                                 @if (!string.IsNullOrEmpty(firstImgUrl))
                                 {
                                     <div class="d-flex align-center justify-center rounded border border-solid mud-border-default" style="width: 44px; height: 44px; background: white; padding: 2px; overflow: hidden; flex-shrink: 0;">
@@ -392,13 +465,16 @@
                                 </div>
                             </div>
                             <div class="d-flex align-center gap-1">
-                                <span @onclick:stopPropagation="true">
-                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" 
-                                                   Color="Color.Error" 
-                                                   Size="Size.Small" 
-                                                   Title="Eliminar Producto"
-                                                   OnClick="@(() => DeleteProducto(prod))" />
-                                </span>
+                                @if (!_isSelectionMode)
+                                {
+                                    <span @onclick:stopPropagation="true">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                                                       Color="Color.Error" 
+                                                       Size="Size.Small" 
+                                                       Title="Eliminar Producto"
+                                                       OnClick="@(() => DeleteProducto(prod))" />
+                                    </span>
+                                }
                                 <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Default" Size="Size.Small" />
                             </div>
                         </div>
@@ -625,6 +701,43 @@
     </MudItem>
 </MudGrid>
 
+<!-- BARRA FLOTANTE DE ACCIONES POR LOTE (FLOATING BATCH ACTION BAR) -->
+@if (_isSelectionMode && _selectedProductIds.Count > 0)
+{
+    <div class="batch-floating-bar animate-fade">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-3 w-100">
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Secondary" Size="Size.Medium" />
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="font-bold">
+                        @_selectedProductIds.Count @(_selectedProductIds.Count == 1 ? "producto seleccionado" : "productos seleccionados")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="text-muted d-none d-sm-inline">
+                        Se eliminarán los productos maestros y sus variantes de tiendas.
+                    </MudText>
+                </div>
+            </div>
+
+            <div class="d-flex align-center gap-2">
+                <MudButton Variant="Variant.Outlined" 
+                           Color="Color.Default" 
+                           Size="Size.Small" 
+                           OnClick="@(() => _selectedProductIds.Clear())">
+                    Deseleccionar todo
+                </MudButton>
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Error" 
+                           Size="Size.Medium" 
+                           StartIcon="@Icons.Material.Filled.DeleteForever" 
+                           OnClick="DeleteSelectedBatchAsync" 
+                           Class="font-bold">
+                    Eliminar Selección (@_selectedProductIds.Count)
+                </MudButton>
+            </div>
+        </div>
+    </div>
+}
+
 <!-- DIALOG INLINE PARA AGREGAR PRODUCTO -->
 <MudDialog @bind-Visible="_addProductoOpen" Options="_dialogOptions">
     <TitleContent>
@@ -796,6 +909,10 @@
     private bool _filterSinRefrescarHoy = false;
     private int _totalSinRefrescarHoy = 0;
     
+    // Modo Selección Múltiple
+    private bool _isSelectionMode = false;
+    private HashSet<int> _selectedProductIds = new();
+
     private ProductoMaestro? _selectedProducto;
     private List<VarianteComercial> _variantes = new();
     private Dictionary<int, int> _variantFallaIds = new(); // key: VarianteComercialId, value: FallaId
@@ -972,12 +1089,17 @@
 
     private async Task OnProductoSelected(ProductoMaestro prod)
     {
+        if (prod == null) return;
+
+        if (_isSelectionMode)
+        {
+            ToggleProductSelection(prod.Id);
+            return;
+        }
+
         _selectedProducto = prod;
         _showDetails = true;
-        if (_selectedProducto != null)
-        {
-            await LoadProductoDetalle();
-        }
+        await LoadProductoDetalle();
     }
 
     private async Task LoadProductoDetalle()
@@ -1154,6 +1276,85 @@
 
             Snackbar.Add("Producto eliminado.", Severity.Success);
             await LoadProductos();
+        }
+    }
+
+    private void ToggleSelectionMode()
+    {
+        _isSelectionMode = !_isSelectionMode;
+        if (!_isSelectionMode)
+        {
+            _selectedProductIds.Clear();
+        }
+    }
+
+    private void ToggleProductSelection(int id)
+    {
+        if (_selectedProductIds.Contains(id))
+        {
+            _selectedProductIds.Remove(id);
+        }
+        else
+        {
+            _selectedProductIds.Add(id);
+        }
+    }
+
+    private void ToggleSelectAll(bool selectAll)
+    {
+        if (selectAll)
+        {
+            foreach (var p in _productos)
+            {
+                _selectedProductIds.Add(p.Id);
+            }
+        }
+        else
+        {
+            _selectedProductIds.Clear();
+        }
+    }
+
+    private async Task DeleteSelectedBatchAsync()
+    {
+        if (_selectedProductIds.Count == 0) return;
+
+        int count = _selectedProductIds.Count;
+        bool confirm = await JS.InvokeAsync<bool>("confirm",
+            $"¿Está seguro de eliminar los {count} productos seleccionados y todas sus variantes/históricos asociados?\nEsta acción no se puede deshacer.");
+
+        if (confirm)
+        {
+            try
+            {
+                using var context = await DbFactory.CreateDbContextAsync();
+                var prodsToDelete = await context.ProductosMaestros
+                    .Where(p => _selectedProductIds.Contains(p.Id))
+                    .ToListAsync();
+
+                if (prodsToDelete.Count > 0)
+                {
+                    if (_selectedProducto != null && _selectedProductIds.Contains(_selectedProducto.Id))
+                    {
+                        _selectedProducto = null;
+                        _showDetails = false;
+                    }
+
+                    context.ProductosMaestros.RemoveRange(prodsToDelete);
+                    await context.SaveChangesAsync();
+
+                    Snackbar.Add($"{prodsToDelete.Count} productos eliminados con éxito.", Severity.Success);
+                    _selectedProductIds.Clear();
+                    _isSelectionMode = false;
+                    await LoadCategorias();
+                    await LoadDescuentos();
+                    await LoadProductos();
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error al eliminar productos: {ex.Message}", Severity.Error);
+            }
         }
     }
 
@@ -1730,6 +1931,26 @@
         to { opacity: 1; transform: translateY(0); }
     }
     
+    .batch-selected-item {
+        border-color: var(--mud-palette-secondary) !important;
+        background-color: rgba(var(--mud-palette-secondary-rgb), 0.08) !important;
+    }
+    .batch-floating-bar {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1300;
+        width: 90%;
+        max-width: 760px;
+        background: var(--mud-palette-surface);
+        border: 2px solid var(--mud-palette-secondary);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+        border-radius: 12px;
+        padding: 12px 20px;
+        backdrop-filter: blur(8px);
+    }
+    
     /* Estilos responsivos de navegación pure CSS */
     @@media (max-width: 959px) {
         .mobile-hide-list {
@@ -1737,6 +1958,11 @@
         }
         .mobile-hide-details {
             display: none !important;
+        }
+        .batch-floating-bar {
+            width: 95%;
+            bottom: 12px;
+            padding: 8px 12px;
         }
     }
 </style>
