@@ -52,6 +52,7 @@ builder.Services.AddCors(options =>
 // Registrar controladores para soportar API de ingesta
 builder.Services.AddControllers();
 builder.Services.AddSingleton<Teocuitla.Web.Services.IngestionNotificationService>();
+builder.Services.AddScoped<Teocuitla.Web.Services.IBulkIngestionService, Teocuitla.Web.Services.BulkIngestionService>();
 
 
 builder.Services.AddRazorComponents()
