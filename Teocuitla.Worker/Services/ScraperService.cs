@@ -662,6 +662,18 @@ namespace Teocuitla.Worker.Services
                     ErrorMensaje = ex.Message
                 };
             }
+            finally
+            {
+                // Garantizar la terminación explícita del navegador y su proceso chromedriver.exe
+                try
+                {
+                    driver.Quit();
+                }
+                catch (Exception quitEx)
+                {
+                    _logger.LogDebug(quitEx, "Falla no crítica al cerrar ChromeDriver durante driver.Quit().");
+                }
+            }
         }
 
         public static decimal? ParsePrice(string? input)
