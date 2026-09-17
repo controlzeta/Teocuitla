@@ -66,6 +66,26 @@ else
             <MudText Class="pa-6 d-block text-center text-muted">Aún no hay métricas de extracción registradas.</MudText>
         </NoRecordsContent>
     </MudTable>
+
+    <MudText Typo="Typo.h6" Class="font-bold mt-6 mb-3">Rendimiento por método</MudText>
+    <MudTable Items="_methodMetrics" Hover="true" Outlined="true" Dense="true">
+        <HeaderContent>
+            <MudTh>Método</MudTh>
+            <MudTh>Fuente</MudTh>
+            <MudTh class="text-right">Extracciones</MudTh>
+            <MudTh class="text-right">Éxito</MudTh>
+            <MudTh class="text-right">Confianza</MudTh>
+            <MudTh class="text-right">Latencia</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Método">@context.Method</MudTd>
+            <MudTd DataLabel="Fuente">@context.Source</MudTd>
+            <MudTd DataLabel="Extracciones" Class="text-right">@context.Total</MudTd>
+            <MudTd DataLabel="Éxito" Class="text-right">@context.SuccessRate.ToString("N1")%</MudTd>
+            <MudTd DataLabel="Confianza" Class="text-right">@context.AverageConfidence.ToString("N0")%</MudTd>
+            <MudTd DataLabel="Latencia" Class="text-right">@context.AverageLatency.ToString("N0") ms</MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
 @code {
@@ -74,6 +94,7 @@ else
     private double _successRate;
     private double _averageLatency;
     private List<SiteMetric> _siteMetrics = [];
+    private List<MethodMetric> _methodMetrics = [];
 
     private Color SuccessColor => _successRate >= 90 ? Color.Success : Color.Warning;
 
@@ -104,8 +125,24 @@ else
                 group.OrderByDescending(metric => metric.Metric.FechaRegistro).Select(metric => metric.Metric.FuentePrecio ?? "Selector configurado").First()))
             .OrderByDescending(metric => metric.Total)
             .ToList();
+        _methodMetrics = metrics
+            .GroupBy(metric => new
+            {
+                Method = metric.Metric.MetodoDeteccion ?? "Selector configurado",
+                Source = metric.Metric.FuentePrecio ?? "Selector configurado"
+            })
+            .Select(group => new MethodMetric(
+                group.Key.Method,
+                group.Key.Source,
+                group.Count(),
+                group.Count(metric => metric.Metric.Exitoso) * 100d / group.Count(),
+                group.Where(metric => metric.Metric.Exitoso).Select(metric => metric.Metric.ConfianzaPrecio).DefaultIfEmpty().Average(),
+                group.Average(metric => metric.Metric.LatenciaMs)))
+            .OrderByDescending(metric => metric.Total)
+            .ToList();
         _loading = false;
     }
 
     private sealed record SiteMetric(string SiteName, int Total, double SuccessRate, double AverageConfidence, double AverageLatency, string LastSource);
+    private sealed record MethodMetric(string Method, string Source, int Total, double SuccessRate, double AverageConfidence, double AverageLatency);
 }

@@ -23,6 +23,8 @@ namespace Teocuitla.Web.Controllers
     [ApiKeyAuth]
     public class IngestionController : ControllerBase
     {
+        private const int MaximumExtensionHtmlRequestBytes = 6 * 1024 * 1024;
+        private const int DefaultExtensionHtmlBytes = 5 * 1024 * 1024;
         private readonly TeocuitlaDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<IngestionController> _logger;
@@ -102,7 +104,11 @@ namespace Teocuitla.Web.Controllers
                     dto.ImagenUrl,
                     dto.SelectorNombreXPath,
                     dto.SelectorPrecioXPath,
-                    dto.SelectorImagenXPath
+                    dto.SelectorImagenXPath,
+                    dto.MetodoDeteccion,
+                    dto.FuentePrecio,
+                    dto.ConfianzaPrecio,
+                    dto.LatenciaMs
                 });
 
                 try
@@ -136,31 +142,6 @@ namespace Teocuitla.Web.Controllers
                         {
                             _logger.LogWarning("La extensión intentó enviar datos para un sitio no registrado en la base de datos: Dominio={Dominio}, Sku={Sku}, Url={Url}", baseDomain, dto.Sku, dto.UrlProducto);
                             return BadRequest($"El sitio con dominio '{baseDomain}' no existe en la base de datos.");
-                        }
-
-                        // Auto-aprendizaje/corrección de selectores a partir de la extensión
-                        bool siteUpdated = false;
-                        if (!string.IsNullOrEmpty(dto.SelectorNombreXPath) && site.SelectorNombreXPath != dto.SelectorNombreXPath)
-                        {
-                            site.SelectorNombreXPath = dto.SelectorNombreXPath.Length > 500 ? dto.SelectorNombreXPath.Substring(0, 500) : dto.SelectorNombreXPath;
-                            siteUpdated = true;
-                        }
-                        if (!string.IsNullOrEmpty(dto.SelectorPrecioXPath) && site.SelectorPrecioXPath != dto.SelectorPrecioXPath)
-                        {
-                            site.SelectorPrecioXPath = dto.SelectorPrecioXPath.Length > 500 ? dto.SelectorPrecioXPath.Substring(0, 500) : dto.SelectorPrecioXPath;
-                            siteUpdated = true;
-                        }
-                        if (!string.IsNullOrEmpty(dto.SelectorImagenXPath) && site.SelectorImagenXPath != dto.SelectorImagenXPath)
-                        {
-                            site.SelectorImagenXPath = dto.SelectorImagenXPath.Length > 500 ? dto.SelectorImagenXPath.Substring(0, 500) : dto.SelectorImagenXPath;
-                            siteUpdated = true;
-                        }
-
-                        if (siteUpdated)
-                        {
-                            _context.CatalogoSitios.Update(site);
-                            await _context.SaveChangesAsync();
-                            _logger.LogInformation("Selectores corregidos/actualizados automáticamente para el sitio {Nombre} desde la extensión.", site.Nombre);
                         }
 
                         // 2. Buscar variante comercial existente por URL limpia, SKU o coincidencia de URL
@@ -271,6 +252,27 @@ namespace Teocuitla.Web.Controllers
                             };
                             _context.HistorialPrecios.Add(history);
                         }
+
+                        if (!string.IsNullOrWhiteSpace(dto.SelectorPrecioXPath) && dto.Precio > 0)
+                        {
+                            var registration = await SelectorCandidateRegistrar.RegisterAsync(
+                                _context, site.Id, variant.Id, dto.SelectorPrecioXPath, dto.Precio, cleanDtoUrl);
+                            if (registration.Promoted)
+                            {
+                                _logger.LogInformation("[LEARNING PROMOTED] Selector de extensión promovido para el sitio {Nombre} tras {ValidationCount} validaciones.", site.Nombre, registration.ValidationCount);
+                            }
+                        }
+
+                        _context.RegistroMetricasExtraccion.Add(new RegistroMetricaExtraccion
+                        {
+                            CatalogoSitioId = site.Id,
+                            VarianteComercialId = variant.Id,
+                            Exitoso = true,
+                            MetodoDeteccion = dto.MetodoDeteccion,
+                            FuentePrecio = dto.FuentePrecio,
+                            ConfianzaPrecio = dto.ConfianzaPrecio,
+                            LatenciaMs = dto.LatenciaMs
+                        });
                         
                         // Actualizar fecha de último rastreo del sitio
                         site.UltimoRastreo = DateTime.Now;
@@ -291,6 +293,53 @@ namespace Teocuitla.Web.Controllers
                     return StatusCode(500, $"Error interno: {ex.Message}");
                 }
             }
+        }
+
+        [HttpPost("extension/extract")]
+        [RequestSizeLimit(MaximumExtensionHtmlRequestBytes)]
+        public IActionResult ExtractFromExtensionHtml([FromBody] ExtensionHeuristicExtractionRequestDto dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Html))
+            {
+                return BadRequest("El contenido HTML no puede estar vacío.");
+            }
+
+            if (!Uri.TryCreate(dto.UrlProducto, UriKind.Absolute, out var productUri) ||
+                (productUri.Scheme != Uri.UriSchemeHttp && productUri.Scheme != Uri.UriSchemeHttps))
+            {
+                return BadRequest("La URL del producto debe ser HTTP o HTTPS.");
+            }
+
+            var configuredLimit = _configuration.GetValue<int?>("Ingestion:ExtensionExtraction:MaxHtmlBytes")
+                                  ?? DefaultExtensionHtmlBytes;
+            var htmlLimit = Math.Clamp(configuredLimit, 1, MaximumExtensionHtmlRequestBytes);
+            var htmlBytes = System.Text.Encoding.UTF8.GetByteCount(dto.Html);
+            if (htmlBytes > htmlLimit)
+            {
+                return StatusCode(StatusCodes.Status413PayloadTooLarge,
+                    $"El contenido HTML excede el límite configurado de {htmlLimit} bytes.");
+            }
+
+            var extracted = HeuristicExtractor.Extract(dto.Html);
+            _logger.LogInformation(
+                "Extracción heurística solicitada por extensión. Dominio={Domain}, HtmlBytes={HtmlBytes}, Método={Method}, Fuente={Source}, Confianza={Confidence}, PrecioEncontrado={PriceFound}",
+                productUri.Host, htmlBytes, extracted.MetodoDeteccion, extracted.FuentePrecio,
+                extracted.ConfianzaPrecio, extracted.Precio.HasValue);
+
+            return Ok(new ExtensionHeuristicExtractionResultDto
+            {
+                Sku = extracted.Sku,
+                Nombre = extracted.Nombre,
+                Precio = extracted.Precio,
+                EnStock = extracted.EnStock,
+                ImagenUrl = extracted.ImagenUrl,
+                Marca = extracted.Marca,
+                SelectorPrecioXPath = extracted.XPathPrecio,
+                FuentePrecio = extracted.FuentePrecio,
+                Moneda = extracted.Moneda,
+                MetodoDeteccion = extracted.MetodoDeteccion,
+                ConfianzaPrecio = extracted.ConfianzaPrecio
+            });
         }
 
 

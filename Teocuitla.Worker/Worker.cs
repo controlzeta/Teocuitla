@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Teocuitla.Shared.Dtos;
+using Teocuitla.Shared.Helpers;
 using Teocuitla.Shared.Models;
 using Teocuitla.Shared.Data;
 using Teocuitla.Worker.Services;
@@ -406,41 +407,21 @@ namespace Teocuitla.Worker
                 using var scope = _scopeFactory.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
 
-                var xpathSelector = scrapResult.LearnedSelector!;
-                var alreadyValidated = await context.SelectoresCandidatos.AnyAsync(candidate =>
-                    candidate.CatalogoSitioId == variante.CatalogoSitioId &&
-                    candidate.XPath == xpathSelector &&
-                    candidate.VarianteComercialId == variante.Id);
+                var registration = await SelectorCandidateRegistrar.RegisterAsync(
+                    context,
+                    variante.CatalogoSitioId,
+                    variante.Id,
+                    scrapResult.LearnedSelector!,
+                    scrapResult.Precio,
+                    variante.UrlProducto);
 
-                if (!alreadyValidated)
+                if (registration.Added)
                 {
-                    context.SelectoresCandidatos.Add(new SelectorCandidato
-                    {
-                        CatalogoSitioId = variante.CatalogoSitioId,
-                        VarianteComercialId = variante.Id,
-                        XPath = xpathSelector,
-                        PrecioVerificado = scrapResult.Precio,
-                        UrlProducto = variante.UrlProducto
-                    });
-                    await context.SaveChangesAsync();
-                    _logger.LogInformation("[LEARNING CANDIDATE] Selector {Selector} validado para variante {VarianteId}.", xpathSelector, variante.Id);
+                    _logger.LogInformation("[LEARNING CANDIDATE] Selector {Selector} validado para variante {VarianteId}.", scrapResult.LearnedSelector, variante.Id);
                 }
-
-                const int promotionThreshold = 3;
-                var validationCount = await context.SelectoresCandidatos
-                    .Where(candidate => candidate.CatalogoSitioId == variante.CatalogoSitioId && candidate.XPath == xpathSelector)
-                    .Select(candidate => candidate.VarianteComercialId)
-                    .Distinct()
-                    .CountAsync();
-
-                if (validationCount < promotionThreshold) return;
-
-                var sitio = await context.CatalogoSitios.FindAsync(variante.CatalogoSitioId);
-                if (sitio != null && sitio.SelectorPrecioXPath != xpathSelector)
+                if (registration.Promoted)
                 {
-                    sitio.SelectorPrecioXPath = xpathSelector;
-                    await context.SaveChangesAsync();
-                    _logger.LogInformation("[LEARNING PROMOTED] El selector {Selector} se promovió para el sitio '{Nombre}' tras {ValidationCount} validaciones.", xpathSelector, sitio.Nombre, validationCount);
+                    _logger.LogInformation("[LEARNING PROMOTED] El selector {Selector} se promovió para el sitio {SitioId} tras {ValidationCount} validaciones.", scrapResult.LearnedSelector, variante.CatalogoSitioId, registration.ValidationCount);
                 }
             }
             catch (Exception ex)
