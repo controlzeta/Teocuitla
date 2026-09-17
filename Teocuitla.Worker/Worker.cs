@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Teocuitla.Shared.Dtos;
+using Teocuitla.Shared.Helpers;
 using Teocuitla.Shared.Models;
 using Teocuitla.Shared.Data;
 using Teocuitla.Worker.Services;
@@ -187,13 +188,13 @@ namespace Teocuitla.Worker
                         {
                             // Ejecutar el scraping (ligero o pesado según configuración)
                             var scrapResult = await _scraperService.ScrapeAsync(variante, variante.CatalogoSitio!, proxy);
+                            await RegisterExtractionMetricAsync(variante, scrapResult);
 
                              if (scrapResult.Exitoso)
                             {
-                                // Si se aprendio un nuevo selector de forma heuristica, guardarlo en BD
-                                if (!string.IsNullOrEmpty(scrapResult.LearnedSelector))
+                                if (!string.IsNullOrEmpty(scrapResult.LearnedSelector) && scrapResult.LearnedSelectorValidated)
                                 {
-                                    await UpdateSiteSelectorAsync(variante.CatalogoSitioId, scrapResult.LearnedSelector);
+                                    await RegisterSelectorCandidateAsync(variante, scrapResult);
                                 }
 
                                 // Si se aprendió una nueva estrategia de evasión, guardarla en BD
@@ -399,24 +400,57 @@ namespace Teocuitla.Worker
             }
         }
 
-        private async Task UpdateSiteSelectorAsync(int sitioId, string xpathSelector)
+        private async Task RegisterSelectorCandidateAsync(VarianteComercial variante, ScraperResult scrapResult)
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
-                
-                var sitio = await context.CatalogoSitios.FindAsync(sitioId);
-                if (sitio != null)
+
+                var registration = await SelectorCandidateRegistrar.RegisterAsync(
+                    context,
+                    variante.CatalogoSitioId,
+                    variante.Id,
+                    scrapResult.LearnedSelector!,
+                    scrapResult.Precio,
+                    variante.UrlProducto);
+
+                if (registration.Added)
                 {
-                    sitio.SelectorPrecioXPath = xpathSelector;
-                    await context.SaveChangesAsync();
-                    _logger.LogInformation("[LEARNING SUCCESS] Se guardo en la base de datos el nuevo selector aprendido para el sitio '{Nombre}': {Selector}", sitio.Nombre, xpathSelector);
+                    _logger.LogInformation("[LEARNING CANDIDATE] Selector {Selector} validado para variante {VarianteId}.", scrapResult.LearnedSelector, variante.Id);
+                }
+                if (registration.Promoted)
+                {
+                    _logger.LogInformation("[LEARNING PROMOTED] El selector {Selector} se promovió para el sitio {SitioId} tras {ValidationCount} validaciones.", scrapResult.LearnedSelector, variante.CatalogoSitioId, registration.ValidationCount);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al guardar el selector aprendido para el sitio {SitioId}.", sitioId);
+                _logger.LogError(ex, "Error al registrar el selector candidato para el sitio {SitioId}.", variante.CatalogoSitioId);
+            }
+        }
+
+        private async Task RegisterExtractionMetricAsync(VarianteComercial variante, ScraperResult scrapResult)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                context.RegistroMetricasExtraccion.Add(new RegistroMetricaExtraccion
+                {
+                    CatalogoSitioId = variante.CatalogoSitioId,
+                    VarianteComercialId = variante.Id,
+                    Exitoso = scrapResult.Exitoso,
+                    MetodoDeteccion = scrapResult.MetodoDeteccion,
+                    FuentePrecio = scrapResult.FuentePrecio,
+                    ConfianzaPrecio = scrapResult.ConfianzaPrecio,
+                    LatenciaMs = scrapResult.LatenciaMs
+                });
+                await context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al registrar la métrica de extracción para la variante {VarianteId}.", variante.Id);
             }
         }
 

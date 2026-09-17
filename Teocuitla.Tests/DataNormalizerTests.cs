@@ -33,7 +33,7 @@ namespace Teocuitla.Tests
         [InlineData("$1,249.99 MXN", 1249.99)]
         [InlineData("Precio: $1.249,99 USD", 1249.99)]
         [InlineData("749.50", 749.50)]
-        [InlineData("$1.250", 1.25)]
+        [InlineData("$1.250", 1250.0)]
         [InlineData("Agotado", null)]
         public void NormalizePrice_ParsesFormatsCorrectly(string input, double? expected)
         {

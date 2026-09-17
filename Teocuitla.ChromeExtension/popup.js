@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('apiKey');
   const btnSave = document.getElementById('btnSave');
   const btnExtract = document.getElementById('btnExtract');
+  const btnSaveHtml = document.getElementById('btnSaveHtml');
   const btnReload = document.getElementById('btnReload');
   const btnRefresh = document.getElementById('btnRefresh');
   const btnOpenAll = document.getElementById('btnOpenAll');
@@ -74,6 +75,27 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatus('La extensión no puede ejecutarse en esta página o requiere recargarse.', 'error');
       } else if (response && response.success) {
         updateStatus('Extracción manual solicitada.', 'success');
+      }
+    });
+  });
+
+  // 3.1 Guardar una instantánea del DOM actual como fixture de aprendizaje.
+  btnSaveHtml.addEventListener('click', async () => {
+    updateStatus('Guardando HTML de la página...', '');
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) {
+      updateStatus('No se encontró una pestaña activa.', 'error');
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, { action: 'saveHtmlSnapshot' }, (response) => {
+      if (chrome.runtime.lastError) {
+        updateStatus('La extensión no puede capturar HTML en esta página o requiere recargarse.', 'error');
+      } else if (response && response.success) {
+        updateStatus(`HTML guardado: ${response.fileName}`, 'success');
+      } else {
+        updateStatus(response?.message || 'No se pudo guardar el HTML.', 'error');
       }
     });
   });

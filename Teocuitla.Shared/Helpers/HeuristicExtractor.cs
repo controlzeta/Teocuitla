@@ -1,7 +1,12 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text.Json;
+using System.Text;
 using HtmlAgilityPack;
 
 namespace Teocuitla.Shared.Helpers
@@ -16,22 +21,36 @@ namespace Teocuitla.Shared.Helpers
         public string? Sku { get; set; }
         public string? Marca { get; set; }
         public string MetodoDeteccion { get; set; } = "Ninguno";
+        public string? FuentePrecio { get; set; }
+        public string? PrecioTextoBruto { get; set; }
+        public string? Moneda { get; set; }
+        public string? XPathPrecio { get; set; }
+        public int ConfianzaPrecio { get; set; }
     }
 
     public static class HeuristicExtractor
     {
-        private static readonly Regex PriceRegex = new Regex(@"\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)", RegexOptions.Compiled);
+        private const int MaxCachedExtractions = 256;
+        private static readonly ConcurrentDictionary<string, HeuristicResult> ExtractionCache = new();
 
         /// <summary>
         /// Extrae heuristicamente los datos de un producto a partir del codigo HTML de la pagina.
         /// </summary>
         public static HeuristicResult Extract(string html)
         {
+            if (string.IsNullOrWhiteSpace(html)) return new HeuristicResult();
+
+            var cacheKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html)));
+            if (ExtractionCache.TryGetValue(cacheKey, out var cachedResult))
+            {
+                return CloneResult(cachedResult);
+            }
+
             var result = new HeuristicResult();
-            if (string.IsNullOrWhiteSpace(html)) return result;
 
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
+            var productScope = FindProductScope(doc);
 
             // Intentar Nivel 1: Datos Estructurados JSON-LD (Maximo acierto y precision)
             if (TryExtractFromJsonLd(doc, result))
@@ -46,25 +65,17 @@ namespace Teocuitla.Shared.Helpers
             // Intentar Nivel 3: Analisis Semantico Basico del DOM
             else
             {
-                ExtractFromDomHeuristics(doc, result);
+                ExtractFromDomHeuristics(doc, productScope, result);
                 result.MetodoDeteccion = "Analisis Semantico DOM (Fallback)";
             }
 
-            // APRENDIZAJE / CORRECCIÓN DE DESCUENTOS:
-            // Si el precio detectado es el original, pero el DOM tiene un precio rebajado explícito, preferir el precio rebajado.
-            var priceAfterDiscountNode = doc.DocumentNode.SelectSingleNode("//*[contains(@class, 'price-after-discount') or contains(@class, 'price-discount') or contains(@class, 'special-price') or contains(@class, 'sale-price')]");
-            if (priceAfterDiscountNode != null)
+            if (result.Precio.HasValue && FindPriceInDom(productScope, out var currentPriceNode) is decimal contextualPrice &&
+                IsCurrentPriceNode(currentPriceNode) && contextualPrice != result.Precio)
             {
-                var match = PriceRegex.Match(priceAfterDiscountNode.InnerText);
-                if (match.Success)
+                if (SetPrice(result, currentPriceNode!.InnerText, "Precio actual DOM", 80, currentPriceNode))
                 {
-                    var priceValStr = match.Groups[1].Value.Replace(",", "");
-                    if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                    {
-                        result.Precio = parsedPrice;
-                        result.XPathSugerido = GetSmartXPath(priceAfterDiscountNode);
-                        result.MetodoDeteccion += " (Con Corrección de Descuento DOM)";
-                    }
+                    result.XPathSugerido = GetSmartXPath(currentPriceNode);
+                    result.MetodoDeteccion += " (Con Corrección de Descuento DOM)";
                 }
             }
 
@@ -72,10 +83,11 @@ namespace Teocuitla.Shared.Helpers
             // buscamos en caliente el elemento visual en el DOM que contiene dicho precio y generamos su XPath inteligente.
             if (result.Precio.HasValue && string.IsNullOrEmpty(result.XPathSugerido))
             {
-                var priceNode = FindNodeForPrice(doc, result.Precio.Value);
+                var priceNode = FindNodeForPrice(productScope, result.Precio.Value);
                 if (priceNode != null)
                 {
                     result.XPathSugerido = GetSmartXPath(priceNode);
+                    result.XPathPrecio = result.XPathSugerido;
                 }
             }
 
@@ -109,7 +121,42 @@ namespace Teocuitla.Shared.Helpers
                 result.ImagenUrl = DataNormalizer.NormalizeImageUrl(DataNormalizer.MakeAbsoluteUrl(result.ImagenUrl, null));
             }
 
+            CacheResult(cacheKey, result);
             return result;
+        }
+
+        private static void CacheResult(string cacheKey, HeuristicResult result)
+        {
+            if (ExtractionCache.Count >= MaxCachedExtractions)
+            {
+                var oldestKnownKey = ExtractionCache.Keys.FirstOrDefault();
+                if (oldestKnownKey != null)
+                {
+                    ExtractionCache.TryRemove(oldestKnownKey, out _);
+                }
+            }
+
+            ExtractionCache.TryAdd(cacheKey, CloneResult(result));
+        }
+
+        private static HeuristicResult CloneResult(HeuristicResult source)
+        {
+            return new HeuristicResult
+            {
+                Nombre = source.Nombre,
+                Precio = source.Precio,
+                EnStock = source.EnStock,
+                XPathSugerido = source.XPathSugerido,
+                ImagenUrl = source.ImagenUrl,
+                Sku = source.Sku,
+                Marca = source.Marca,
+                MetodoDeteccion = source.MetodoDeteccion,
+                FuentePrecio = source.FuentePrecio,
+                PrecioTextoBruto = source.PrecioTextoBruto,
+                Moneda = source.Moneda,
+                XPathPrecio = source.XPathPrecio,
+                ConfianzaPrecio = source.ConfianzaPrecio
+            };
         }
 
         private static bool TryExtractFromJsonLd(HtmlDocument doc, HeuristicResult result)
@@ -125,16 +172,14 @@ namespace Teocuitla.Shared.Helpers
                     using var jsonDoc = JsonDocument.Parse(jsonText);
                     var root = jsonDoc.RootElement;
 
-                    if (root.ValueKind == JsonValueKind.Array)
+                    foreach (var element in EnumerateJsonObjects(root))
                     {
-                        foreach (var elem in root.EnumerateArray())
+                        var extracted = new HeuristicResult();
+                        if (ParseProductElement(element, extracted))
                         {
-                            if (ParseProductElement(elem, result)) return true;
+                            CopyProductResult(extracted, result);
+                            return true;
                         }
-                    }
-                    else if (root.ValueKind == JsonValueKind.Object)
-                    {
-                        if (ParseProductElement(root, result)) return true;
                     }
                 }
                 catch
@@ -152,6 +197,31 @@ namespace Teocuitla.Shared.Helpers
             return true;
         }
 
+        private static IEnumerable<JsonElement> EnumerateJsonObjects(JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var nested in EnumerateJsonObjects(item)) yield return nested;
+                }
+                yield break;
+            }
+
+            if (element.ValueKind != JsonValueKind.Object) yield break;
+            yield return element;
+
+            if (element.TryGetProperty("@graph", out var graph))
+            {
+                foreach (var nested in EnumerateJsonObjects(graph)) yield return nested;
+            }
+
+            if (element.TryGetProperty("hasVariant", out var variants))
+            {
+                foreach (var nested in EnumerateJsonObjects(variants)) yield return nested;
+            }
+        }
+
         private static string? GetJsonStringValue(JsonElement elem)
         {
             if (elem.ValueKind == JsonValueKind.String) return elem.GetString();
@@ -161,7 +231,7 @@ namespace Teocuitla.Shared.Helpers
 
         private static bool ParseProductElement(JsonElement elem, HeuristicResult result)
         {
-            if (elem.TryGetProperty("@type", out var typeProp) && typeProp.GetString()?.Equals("Product", StringComparison.OrdinalIgnoreCase) == true)
+            if (HasJsonType(elem, "Product"))
             {
                 if (elem.TryGetProperty("name", out var nameProp))
                 {
@@ -180,20 +250,14 @@ namespace Teocuitla.Shared.Helpers
                     }
                 }
 
-                if (elem.TryGetProperty("offers", out var offersProp))
+                if (elem.TryGetProperty("offers", out var offersProp) && TrySelectOffer(offersProp, out var offer))
                 {
-                    if (offersProp.ValueKind == JsonValueKind.Object)
-                    {
-                        ExtractOfferDetails(offersProp, result);
-                    }
-                    else if (offersProp.ValueKind == JsonValueKind.Array && offersProp.GetArrayLength() > 0)
-                    {
-                        foreach (var off in offersProp.EnumerateArray())
-                        {
-                            ExtractOfferDetails(off, result);
-                            if (result.Precio.HasValue && result.Precio.Value > 0) break;
-                        }
-                    }
+                    result.Precio = offer.Price;
+                    result.PrecioTextoBruto = offer.RawValue;
+                    result.Moneda = offer.Currency;
+                    result.EnStock = offer.EnStock;
+                    result.FuentePrecio = offer.Source;
+                    result.ConfianzaPrecio = offer.Confidence;
                 }
 
                 if (elem.TryGetProperty("sku", out var skuProp))
@@ -229,81 +293,91 @@ namespace Teocuitla.Shared.Helpers
             return false;
         }
 
-        private static void ExtractOfferDetails(JsonElement offer, HeuristicResult result)
+        private static bool HasJsonType(JsonElement element, string expectedType)
         {
-            if (offer.TryGetProperty("price", out var priceProp))
+            if (!element.TryGetProperty("@type", out var type)) return false;
+            if (type.ValueKind == JsonValueKind.String)
             {
-                string? priceStr = null;
-                if (priceProp.ValueKind == JsonValueKind.Number)
-                {
-                    var val = priceProp.GetDecimal();
-                    if (val > 0) result.Precio = val;
-                }
-                else if (priceProp.ValueKind == JsonValueKind.String)
-                {
-                    priceStr = priceProp.GetString();
-                }
-
-                if (priceStr != null && decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                {
-                    if (parsedPrice > 0) result.Precio = parsedPrice;
-                }
+                return string.Equals(type.GetString(), expectedType, StringComparison.OrdinalIgnoreCase);
             }
 
-            if (!result.Precio.HasValue || result.Precio <= 0)
-            {
-                if (offer.TryGetProperty("lowPrice", out var lowPriceProp))
-                {
-                    string? priceStr = null;
-                    if (lowPriceProp.ValueKind == JsonValueKind.Number)
-                    {
-                        var val = lowPriceProp.GetDecimal();
-                        if (val > 0) result.Precio = val;
-                    }
-                    else if (lowPriceProp.ValueKind == JsonValueKind.String)
-                    {
-                        priceStr = lowPriceProp.GetString();
-                    }
+            return type.ValueKind == JsonValueKind.Array &&
+                   type.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String &&
+                       string.Equals(item.GetString(), expectedType, StringComparison.OrdinalIgnoreCase));
+        }
 
-                    if (priceStr != null && decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                    {
-                        if (parsedPrice > 0) result.Precio = parsedPrice;
-                    }
+        private static bool TrySelectOffer(JsonElement offers, out JsonOffer selected)
+        {
+            var candidates = EnumerateOffers(offers)
+                .Select(CreateOffer)
+                .Where(candidate => candidate != null)
+                .Cast<JsonOffer>()
+                .OrderByDescending(candidate => candidate.Rank)
+                .ToList();
+
+            selected = candidates.FirstOrDefault()!;
+            return selected != null;
+        }
+
+        private static IEnumerable<JsonElement> EnumerateOffers(JsonElement offers)
+        {
+            if (offers.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var offer in offers.EnumerateArray())
+                {
+                    foreach (var nested in EnumerateOffers(offer)) yield return nested;
                 }
+                yield break;
             }
 
-            if (!result.Precio.HasValue || result.Precio <= 0)
+            if (offers.ValueKind != JsonValueKind.Object) yield break;
+            if (offers.TryGetProperty("offers", out var nestedOffers))
             {
-                if (offer.TryGetProperty("offers", out var nestedOffersProp))
-                {
-                    if (nestedOffersProp.ValueKind == JsonValueKind.Array && nestedOffersProp.GetArrayLength() > 0)
-                    {
-                        foreach (var subOffer in nestedOffersProp.EnumerateArray())
-                        {
-                            ExtractOfferDetails(subOffer, result);
-                            if (result.Precio.HasValue && result.Precio.Value > 0) break;
-                        }
-                    }
-                    else if (nestedOffersProp.ValueKind == JsonValueKind.Object)
-                    {
-                        ExtractOfferDetails(nestedOffersProp, result);
-                    }
-                }
+                foreach (var nested in EnumerateOffers(nestedOffers)) yield return nested;
             }
 
-            if (offer.TryGetProperty("availability", out var availProp))
+            if (offers.TryGetProperty("price", out _) || offers.TryGetProperty("lowPrice", out _))
             {
-                var availUrl = availProp.GetString()?.ToLower() ?? "";
-                if (availUrl.Contains("instock"))
-                {
-                    result.EnStock = true;
-                }
-                else if (availUrl.Contains("outofstock") || availUrl.Contains("soldout") || availUrl.Contains("discontinued"))
-                {
-                    result.EnStock = false;
-                }
+                yield return offers;
             }
         }
+
+        private static JsonOffer? CreateOffer(JsonElement offer)
+        {
+            var isDirectPrice = offer.TryGetProperty("price", out var priceElement);
+            if (!isDirectPrice && !offer.TryGetProperty("lowPrice", out priceElement)) return null;
+
+            var parsed = PriceParser.Parse(GetJsonStringValue(priceElement));
+            if (parsed == null) return null;
+
+            var availability = offer.TryGetProperty("availability", out var availabilityElement)
+                ? availabilityElement.GetString()?.ToLowerInvariant() ?? string.Empty
+                : string.Empty;
+            var enStock = !availability.Contains("outofstock") && !availability.Contains("soldout") && !availability.Contains("discontinued");
+            var currency = offer.TryGetProperty("priceCurrency", out var currencyElement)
+                ? GetJsonStringValue(currencyElement)?.ToUpperInvariant()
+                : parsed.Currency;
+            var rank = (isDirectPrice ? 100 : 80) + (enStock ? 20 : 0) + (string.IsNullOrEmpty(currency) ? 0 : 5);
+
+            return new JsonOffer(parsed.Price, parsed.RawValue, currency, enStock,
+                isDirectPrice ? "JSON-LD" : "JSON-LD (Precio mínimo)", isDirectPrice ? 100 : 90, rank);
+        }
+
+        private static void CopyProductResult(HeuristicResult source, HeuristicResult destination)
+        {
+            destination.Nombre = source.Nombre;
+            destination.Precio = source.Precio;
+            destination.EnStock = source.EnStock;
+            destination.ImagenUrl = source.ImagenUrl;
+            destination.Sku = source.Sku;
+            destination.Marca = source.Marca;
+            destination.FuentePrecio = source.FuentePrecio;
+            destination.PrecioTextoBruto = source.PrecioTextoBruto;
+            destination.Moneda = source.Moneda;
+            destination.ConfianzaPrecio = source.ConfianzaPrecio;
+        }
+
+        private sealed record JsonOffer(decimal Price, string RawValue, string? Currency, bool EnStock, string Source, int Confidence, int Rank);
 
         private static bool TryExtractFromMetaTags(HtmlDocument doc, HeuristicResult result)
         {
@@ -332,10 +406,7 @@ namespace Teocuitla.Shared.Helpers
             if (priceNode != null && (!result.Precio.HasValue || result.Precio <= 0))
             {
                 var priceStr = priceNode.GetAttributeValue("content", "").Trim();
-                if (decimal.TryParse(priceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                {
-                    if (parsedPrice > 0) result.Precio = parsedPrice;
-                }
+                SetPrice(result, priceStr, "Meta etiqueta", 90);
             }
 
             var stockNode = doc.DocumentNode.SelectSingleNode("//meta[@property='product:availability']")
@@ -356,9 +427,9 @@ namespace Teocuitla.Shared.Helpers
             return !string.IsNullOrEmpty(result.Nombre) && (!result.EnStock || (result.Precio.HasValue && result.Precio.Value > 0));
         }
 
-        private static void ExtractFromDomHeuristics(HtmlDocument doc, HeuristicResult result)
+        private static void ExtractFromDomHeuristics(HtmlDocument doc, HtmlNode productScope, HeuristicResult result)
         {
-            var h1Node = doc.DocumentNode.SelectSingleNode("//h1");
+            var h1Node = productScope.SelectSingleNode(".//h1") ?? doc.DocumentNode.SelectSingleNode("//h1");
             if (string.IsNullOrEmpty(result.Nombre))
             {
                 if (h1Node != null)
@@ -377,8 +448,8 @@ namespace Teocuitla.Shared.Helpers
                 }
             }
 
-            var availNode = doc.DocumentNode.SelectSingleNode("//div[@id='availability']")
-                            ?? doc.DocumentNode.SelectSingleNode("//*[contains(@id, 'availability') or contains(@class, 'availability') or contains(@id, 'stock') or contains(@class, 'stock') or contains(@class, 'no_stock') or contains(@class, 'ui-pdp-message')]");
+            var availNode = productScope.SelectSingleNode(".//*[@id='availability']")
+                            ?? productScope.SelectSingleNode(".//*[contains(@id, 'availability') or contains(@class, 'availability') or contains(@id, 'stock') or contains(@class, 'stock') or contains(@class, 'no_stock') or contains(@class, 'ui-pdp-message')]");
             if (availNode != null)
             {
                 var availText = availNode.InnerText.ToLower();
@@ -392,59 +463,69 @@ namespace Teocuitla.Shared.Helpers
                 }
             }
 
-            var pageText = doc.DocumentNode.InnerText.ToLower();
-            if (pageText.Contains("este producto no está disponible") || pageText.Contains("producto no disponible") || pageText.Contains("publicación pausada") || pageText.Contains("agotado") || pageText.Contains("sin stock") || pageText.Contains("currently unavailable") || pageText.Contains("no_stock"))
+            var pageText = productScope.InnerText.ToLower();
+            if (pageText.Contains("este producto no está disponible") || pageText.Contains("producto no disponible") || pageText.Contains("publicación pausada") || pageText.Contains("currently unavailable"))
             {
                 result.EnStock = false;
             }
 
-            var mainImg = doc.DocumentNode.SelectSingleNode("//img[contains(@class, 'product') or contains(@id, 'product') or contains(@src, 'product')]")
-                          ?? doc.DocumentNode.SelectSingleNode("//img[@id='landingImage' or @id='main-image' or @class='front-image']");
+            var mainImg = productScope.SelectSingleNode(".//img[contains(@class, 'product') or contains(@id, 'product') or contains(@src, 'product')]")
+                          ?? productScope.SelectSingleNode(".//img[@id='landingImage' or @id='main-image' or @class='front-image']");
             if (mainImg != null && string.IsNullOrEmpty(result.ImagenUrl))
             {
                 result.ImagenUrl = mainImg.Attributes["src"]?.Value 
                                    ?? mainImg.Attributes["data-src"]?.Value;
             }
 
-            if (h1Node != null)
-            {
-                var parent = h1Node.ParentNode;
-                if (parent != null)
-                {
-                    var parentText = parent.InnerText;
-                    var normalizedText = Regex.Replace(parentText, @"\s+", " ").Trim();
-                    if (normalizedText.Length < 150)
-                    {
-                        var match = PriceRegex.Match(parentText);
-                        if (match.Success)
-                        {
-                            var priceValStr = match.Groups[1].Value.Replace(",", "");
-                            if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                            {
-                                result.Precio = parsedPrice;
-                                // Encontrar el nodo especifico del precio para aprender su selector
-                                var priceNode = FindNodeForPrice(doc, parsedPrice);
-                                if (priceNode != null)
-                                {
-                                    result.XPathSugerido = GetSmartXPath(priceNode);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             if (!result.Precio.HasValue)
             {
-                var priceVal = FindPriceInDom(doc, out var priceNode);
+                var priceVal = FindPriceInDom(productScope, out var priceNode);
                 if (priceVal.HasValue)
                 {
                     result.Precio = priceVal.Value;
                     if (priceNode != null)
                     {
                         result.XPathSugerido = GetSmartXPath(priceNode);
+                        result.XPathPrecio = result.XPathSugerido;
+                        SetPrice(result, priceNode.InnerText, "DOM semántico", 50, priceNode);
                     }
                 }
             }
+        }
+
+        private static bool SetPrice(HeuristicResult result, string? rawPrice, string source, int confidence, HtmlNode? priceNode = null)
+        {
+            var parsed = PriceParser.Parse(rawPrice);
+            if (parsed == null) return false;
+
+            result.Precio = parsed.Price;
+            result.PrecioTextoBruto = parsed.RawValue;
+            result.Moneda = parsed.Currency ?? result.Moneda;
+            result.FuentePrecio = source;
+            result.ConfianzaPrecio = confidence;
+            if (priceNode != null)
+            {
+                result.XPathPrecio = GetSmartXPath(priceNode);
+            }
+
+            return true;
+        }
+
+        private static HtmlNode FindProductScope(HtmlDocument doc)
+        {
+            var h1 = doc.DocumentNode.SelectSingleNode("//h1");
+            for (var current = h1; current != null && current.Name != "#document"; current = current.ParentNode)
+            {
+                var attributes = $"{current.GetAttributeValue("id", string.Empty)} {current.GetAttributeValue("class", string.Empty)} {current.GetAttributeValue("itemtype", string.Empty)}";
+                if (current.Name.Equals("main", StringComparison.OrdinalIgnoreCase) ||
+                    attributes.Contains("product", StringComparison.OrdinalIgnoreCase) ||
+                    attributes.Contains("pdp", StringComparison.OrdinalIgnoreCase))
+                {
+                    return current;
+                }
+            }
+
+            return doc.DocumentNode.SelectSingleNode("//main") ?? doc.DocumentNode;
         }
 
         private static bool ShouldExcludeNode(HtmlNode node)
@@ -482,52 +563,42 @@ namespace Teocuitla.Shared.Helpers
             return false;
         }
 
-        private static decimal? FindPriceInDom(HtmlDocument doc, out HtmlNode? priceNode)
+        private static decimal? FindPriceInDom(HtmlNode scope, out HtmlNode? priceNode)
         {
             priceNode = null;
-            var priceCandidates = doc.DocumentNode.SelectNodes("//*[contains(@class, 'price') or contains(@class, 'amount') or contains(@id, 'price') or contains(@class, 'special') or contains(@class, 'promo')]");
+            var priceCandidates = scope.SelectNodes(".//*[@itemprop='price' or contains(@class, 'price') or contains(@class, 'amount') or contains(@id, 'price') or contains(@class, 'special') or contains(@class, 'promo') or contains(@data-testid, 'price')]");
             if (priceCandidates != null)
             {
-                foreach (var candidate in priceCandidates)
+                var bestCandidate = priceCandidates
+                    .Where(candidate => candidate.InnerText.Length <= 100 && !ShouldExcludeNode(candidate))
+                    .Select(candidate => new DomPriceCandidate(candidate, PriceParser.Parse(candidate.InnerText)))
+                    .Where(candidate => candidate.ParsedPrice != null)
+                    .OrderByDescending(ScorePriceCandidate)
+                    .FirstOrDefault();
+
+                if (bestCandidate != null)
                 {
-                    if (candidate.InnerText.Length > 50) continue;
-                    if (ShouldExcludeNode(candidate)) continue;
-                    var match = PriceRegex.Match(candidate.InnerText);
-                    if (match.Success)
-                    {
-                        var priceValStr = match.Groups[1].Value.Replace(",", "");
-                        if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
-                        {
-                            if (parsedPrice > 0)
-                            {
-                                priceNode = candidate;
-                                return parsedPrice;
-                            }
-                        }
-                    }
+                    priceNode = bestCandidate.Node;
+                    return bestCandidate.ParsedPrice!.Price;
                 }
             }
 
-            var allTextNodes = doc.DocumentNode.SelectNodes("//text()");
+            var allTextNodes = scope.SelectNodes(".//text()");
             if (allTextNodes != null)
             {
                 foreach (var node in allTextNodes)
                 {
                     var txt = node.InnerText.Trim();
-                    if (txt.Length < 30)
+                    if (txt.Length < 30 && (txt.Contains("$") || Regex.IsMatch(txt, @"\b(?:MXN|USD|EUR|GBP)\b", RegexOptions.IgnoreCase)))
                     {
                         if (node.ParentNode != null && ShouldExcludeNode(node.ParentNode)) continue;
-                        var match = PriceRegex.Match(txt);
-                        if (match.Success)
+                        var parsedPrice = PriceParser.Parse(txt);
+                        if (parsedPrice != null)
                         {
-                            var priceValStr = match.Groups[1].Value.Replace(",", "");
-                            if (decimal.TryParse(priceValStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice))
+                            if (parsedPrice.Price > 0)
                             {
-                                if (parsedPrice > 0)
-                                {
-                                    priceNode = node.ParentNode;
-                                    return parsedPrice;
-                                }
+                                priceNode = node.ParentNode;
+                                return parsedPrice.Price;
                             }
                         }
                     }
@@ -536,10 +607,32 @@ namespace Teocuitla.Shared.Helpers
             return null;
         }
 
+        private static int ScorePriceCandidate(DomPriceCandidate candidate)
+        {
+            var attributes = $"{candidate.Node.GetAttributeValue("id", string.Empty)} {candidate.Node.GetAttributeValue("class", string.Empty)} {candidate.Node.GetAttributeValue("data-testid", string.Empty)}".ToLowerInvariant();
+            var score = 10;
+            if (candidate.Node.GetAttributeValue("itemprop", string.Empty).Equals("price", StringComparison.OrdinalIgnoreCase)) score += 60;
+            if (attributes.Contains("current") || attributes.Contains("final") || attributes.Contains("sale") || attributes.Contains("discount") || attributes.Contains("special")) score += 40;
+            if (attributes.Contains("price") || attributes.Contains("amount")) score += 20;
+            if (attributes.Contains("old") || attributes.Contains("original") || attributes.Contains("list-price") || attributes.Contains("was")) score -= 100;
+            if (attributes.Contains("monthly") || attributes.Contains("mensual") || attributes.Contains("msi") || attributes.Contains("installment")) score -= 100;
+            return score;
+        }
+
+        private static bool IsCurrentPriceNode(HtmlNode? node)
+        {
+            if (node == null) return false;
+            var attributes = $"{node.GetAttributeValue("id", string.Empty)} {node.GetAttributeValue("class", string.Empty)}".ToLowerInvariant();
+            return attributes.Contains("current") || attributes.Contains("final") || attributes.Contains("sale") ||
+                   attributes.Contains("discount") || attributes.Contains("special");
+        }
+
+        private sealed record DomPriceCandidate(HtmlNode Node, PriceParseResult? ParsedPrice);
+
         /// <summary>
         /// Busca en el DOM el nodo de texto mas profundo que contenga el valor numerico del precio.
         /// </summary>
-        private static HtmlNode? FindNodeForPrice(HtmlDocument doc, decimal price)
+        private static HtmlNode? FindNodeForPrice(HtmlNode scope, decimal price)
         {
             try
             {
@@ -549,7 +642,7 @@ namespace Teocuitla.Shared.Helpers
                 
                 // Buscar nodos de texto que contengan el precio
                 var xpathQuery = $"//*[contains(text(), '{priceStr1}') or contains(text(), '{priceStr3}')]";
-                var nodes = doc.DocumentNode.SelectNodes(xpathQuery);
+                var nodes = scope.SelectNodes($".{xpathQuery}");
                 
                 if (nodes != null && nodes.Count > 0)
                 {

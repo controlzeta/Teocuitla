@@ -16,5 +16,9 @@ namespace Teocuitla.Shared.Dtos
         public string? SelectorNombreXPath { get; set; }
         public string? SelectorPrecioXPath { get; set; }
         public string? SelectorImagenXPath { get; set; }
+        public string? MetodoDeteccion { get; set; }
+        public string? FuentePrecio { get; set; }
+        public int ConfianzaPrecio { get; set; }
+        public int LatenciaMs { get; set; }
     }
 }

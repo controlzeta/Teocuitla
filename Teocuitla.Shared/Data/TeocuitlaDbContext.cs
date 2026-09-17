@@ -16,6 +16,8 @@ namespace Teocuitla.Shared.Data
         public DbSet<HistorialPrecio> HistorialPrecios { get; set; } = null!;
         public DbSet<RegistroProxy> RegistroProxies { get; set; } = null!;
         public DbSet<RegistroFallaScraping> RegistroFallasScraping { get; set; } = null!;
+        public DbSet<SelectorCandidato> SelectoresCandidatos { get; set; } = null!;
+        public DbSet<RegistroMetricaExtraccion> RegistroMetricasExtraccion { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -80,6 +82,19 @@ namespace Teocuitla.Shared.Data
                 .WithMany()
                 .HasForeignKey(f => f.VarianteComercialId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<SelectorCandidato>()
+                .HasIndex(c => new { c.CatalogoSitioId, c.XPath, c.VarianteComercialId })
+                .IsUnique()
+                .HasDatabaseName("UX_SelectoresCandidatos_Sitio_XPath_Variante");
+
+            modelBuilder.Entity<SelectorCandidato>()
+                .HasIndex(c => new { c.CatalogoSitioId, c.XPath })
+                .HasDatabaseName("IX_SelectoresCandidatos_Sitio_XPath");
+
+            modelBuilder.Entity<RegistroMetricaExtraccion>()
+                .HasIndex(metric => new { metric.CatalogoSitioId, metric.FechaRegistro })
+                .HasDatabaseName("IX_MetricasExtraccion_Sitio_Fecha");
         }
     }
 }

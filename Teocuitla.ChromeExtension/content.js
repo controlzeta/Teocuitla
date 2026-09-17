@@ -110,6 +110,7 @@ function isPageOutOfStock() {
 }
 
 function extractProductData() {
+  const extractionStartedAt = performance.now();
   let url = window.location.href;
   let domain = window.location.hostname.replace('www.', '');
 
@@ -166,7 +167,16 @@ function extractProductData() {
         // Si la extracción fue exitosa con los selectores de la base de datos (o el producto está agotado)
         const outOfStock = isPageOutOfStock();
         if (sku && nombre && (precio > 0 || outOfStock)) {
-          sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, site.selectorNombreXPath, site.selectorPrecioXPath, site.selectorImagenXPath);
+          sendPayload(
+            sku, nombre, url, precio, imagenUrl, domain, marca,
+            site.selectorNombreXPath, site.selectorPrecioXPath, site.selectorImagenXPath,
+            {
+              metodoDeteccion: 'Selector configurado',
+              fuentePrecio: 'Selector configurado',
+              confianzaPrecio: 90,
+              latenciaMs: Math.round(performance.now() - extractionStartedAt)
+            }
+          );
           return;
         }
       } catch (err) {
@@ -174,13 +184,62 @@ function extractProductData() {
       }
     }
 
-    // Si no hay selectores en la base de datos, o fallaron/están desactualizados,
-    // activamos la extracción con heurísticas locales de auto-aprendizaje
-    executeHardcodedOrGenericExtraction(url, domain);
+    extractWithSharedHeuristic(url, domain, extractionStartedAt);
   });
 }
 
-function executeHardcodedOrGenericExtraction(url, domain) {
+function extractWithSharedHeuristic(url, domain, extractionStartedAt) {
+  const html = document.documentElement?.outerHTML;
+  if (!html) {
+    console.warn('[Teocuitla] No fue posible obtener el HTML actual; se usará el fallback local.');
+    executeHardcodedOrGenericExtraction(url, domain, extractionStartedAt);
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    { action: 'extractWithSharedHeuristic', data: { urlProducto: url, html } },
+    (response) => {
+      if (chrome.runtime.lastError || !response?.success) {
+        console.warn('[Teocuitla] La heurística remota no respondió; se usará el fallback local.', chrome.runtime.lastError || response?.message);
+        executeHardcodedOrGenericExtraction(url, domain, extractionStartedAt);
+        return;
+      }
+
+      const extraction = response.data;
+      const sku = String(extraction.sku || extractSku(url, null) || '').trim();
+      const nombre = String(extraction.nombre || '').trim();
+      const precio = Number(extraction.precio) || 0;
+      const enStock = extraction.enStock !== false;
+
+      if (!sku || !nombre || (precio <= 0 && enStock)) {
+        console.warn('[Teocuitla] La heurística remota devolvió datos insuficientes; se usará el fallback local.', extraction);
+        executeHardcodedOrGenericExtraction(url, domain, extractionStartedAt);
+        return;
+      }
+
+      sendPayload(
+        sku,
+        nombre,
+        url,
+        precio,
+        extraction.imagenUrl || '',
+        domain,
+        extraction.marca || extractBrandFromName(nombre),
+        '',
+        '',
+        '',
+        {
+          metodoDeteccion: extraction.metodoDeteccion,
+          fuentePrecio: extraction.fuentePrecio,
+          confianzaPrecio: extraction.confianzaPrecio,
+          latenciaMs: Math.round(performance.now() - extractionStartedAt)
+        }
+      );
+    }
+  );
+}
+
+function executeHardcodedOrGenericExtraction(url, domain, extractionStartedAt = performance.now()) {
   let sku = '';
   let nombre = '';
   let precio = 0;
@@ -411,7 +470,16 @@ function executeHardcodedOrGenericExtraction(url, domain) {
 
     const outOfStock = isPageOutOfStock();
     if (sku && nombre && (precio > 0 || outOfStock)) {
-      sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, learnedNombreXPath, learnedPrecioXPath, learnedImagenXPath);
+      sendPayload(
+        sku, nombre, url, precio, imagenUrl, domain, marca,
+        learnedNombreXPath, learnedPrecioXPath, learnedImagenXPath,
+        {
+          metodoDeteccion: 'Heurística JavaScript local',
+          fuentePrecio: 'JavaScript local',
+          confianzaPrecio: 0,
+          latenciaMs: Math.round(performance.now() - extractionStartedAt)
+        }
+      );
     } else {
       console.warn('[Teocuitla] Datos insuficientes para la extracción local/genérica. Nombre:', nombre, 'Precio:', precio, 'SKU:', sku, 'Agotado:', outOfStock);
       chrome.runtime.sendMessage({
@@ -430,7 +498,7 @@ function executeHardcodedOrGenericExtraction(url, domain) {
   }
 }
 
-function sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, nombreXPath, precioXPath, imagenXPath) {
+function sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, nombreXPath, precioXPath, imagenXPath, extractionMetadata = {}) {
   if (imagenUrl && imagenUrl.startsWith('/')) {
     imagenUrl = window.location.origin + imagenUrl;
   }
@@ -446,7 +514,11 @@ function sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, nombreX
     // Proporcionar los selectores aprendidos/corregidos en caliente
     selectorNombreXPath: nombreXPath || '',
     selectorPrecioXPath: precioXPath || '',
-    selectorImagenXPath: imagenXPath || ''
+    selectorImagenXPath: imagenXPath || '',
+    metodoDeteccion: extractionMetadata.metodoDeteccion || '',
+    fuentePrecio: extractionMetadata.fuentePrecio || '',
+    confianzaPrecio: Number(extractionMetadata.confianzaPrecio) || 0,
+    latenciaMs: Number(extractionMetadata.latenciaMs) || 0
   };
 
   console.log('[Teocuitla] Enviando producto y selectores corregidos a la base de datos:', payload);
@@ -589,11 +661,38 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', extractProductData);
 }
 
+function saveHtmlSnapshot() {
+  const htmlContent = document.documentElement.outerHTML;
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const domain = window.location.hostname.replace(/^www\./i, '') || 'pagina';
+  const timestamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+  const fileName = `${domain}_${timestamp}.html`;
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = fileName;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  return fileName;
+}
+
 // Escuchar solicitudes de extracción manual y notificaciones de ingesta
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'manualExtract') {
     extractProductData();
     sendResponse({ success: true, message: 'Extracción manual gatillada.' });
+  } else if (request.action === 'saveHtmlSnapshot') {
+    try {
+      sendResponse({ success: true, fileName: saveHtmlSnapshot() });
+    } catch (error) {
+      console.error('[Teocuitla] Error al guardar la instantánea HTML:', error);
+      sendResponse({ success: false, message: 'No se pudo capturar el HTML de la página.' });
+    }
   } else if (request.action === 'showIngestNotification') {
     showNonInvasiveNotification(request);
   }
@@ -783,5 +882,3 @@ function playCashRegisterSound() {
     console.warn('[Teocuitla] No se pudo reproducir el sonido de caja registradora:', err);
   }
 }
-
-

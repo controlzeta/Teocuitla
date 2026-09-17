@@ -86,7 +86,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .then(data => {
         console.log('[Teocuitla] Ingesta exitosa del producto:', data);
-        const statusMsg = `Ingestado: SKU ${productData.sku}`;
+        const extractionSource = productData.metodoDeteccion
+          ? ` mediante ${productData.metodoDeteccion}${productData.confianzaPrecio ? ` (confianza ${productData.confianzaPrecio})` : ''}`
+          : '';
+        const statusMsg = `Ingestado${extractionSource}: SKU ${productData.sku}`;
         chrome.runtime.sendMessage({ action: 'ingestStatus', success: true, message: statusMsg }).catch(() => {});
 
 
@@ -125,6 +128,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
     });
+    return;
+  }
+
+  if (message.action === 'extractWithSharedHeuristic') {
+    const extractionRequest = message.data;
+
+    chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+      const apiUrl = config.apiUrl || 'https://localhost:7192';
+      const apiKey = config.apiKey || 'TeocuitlaDefaultApiKeySecret';
+      const endpoint = `${apiUrl.replace(/\/$/, '')}/api/ingestion/extension/extract`;
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey
+        },
+        body: JSON.stringify(extractionRequest)
+      })
+      .then(async response => {
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Error en heurística remota (${response.status}): ${errorText || response.statusText}`);
+        }
+
+        return response.json();
+      })
+      .then(data => sendResponse({ success: true, data }))
+      .catch(error => {
+        console.warn('[Teocuitla] La heurística remota falló; se usará el fallback local.', error);
+        sendResponse({ success: false, message: error.message });
+      });
+    });
+    return true;
   }
 
   // Nuevo mensaje para proveer los selectores del sitio actual al content script
