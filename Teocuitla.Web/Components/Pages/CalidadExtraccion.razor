@@ -1,0 +1,111 @@
+@page "/admin/calidad-extraccion"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using Teocuitla.Shared.Data
+@inject IDbContextFactory<TeocuitlaDbContext> DbFactory
+
+<PageTitle>Calidad de extracción - Teocuitla</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-6">
+    <div>
+        <MudText Typo="Typo.h4" Class="font-bold">Calidad de Extracción</MudText>
+        <MudText Typo="Typo.body2" Class="text-muted">Métricas de los últimos 30 días por sitio y fuente de datos.</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadMetricsAsync">
+        Refrescar
+    </MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else
+{
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Class="pa-4 text-center">
+                <MudText Typo="Typo.h5" Class="font-bold">@_totalExtractions</MudText>
+                <MudText Typo="Typo.caption" Class="text-muted">Extracciones registradas</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Class="pa-4 text-center">
+                <MudText Typo="Typo.h5" Class="font-bold" Color="@SuccessColor">@_successRate.ToString("N1")%</MudText>
+                <MudText Typo="Typo.caption" Class="text-muted">Tasa de éxito</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Class="pa-4 text-center">
+                <MudText Typo="Typo.h5" Class="font-bold">@_averageLatency.ToString("N0") ms</MudText>
+                <MudText Typo="Typo.caption" Class="text-muted">Latencia promedio</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudTable Items="_siteMetrics" Hover="true" Outlined="true" Dense="true">
+        <HeaderContent>
+            <MudTh>Sitio</MudTh>
+            <MudTh class="text-right">Extracciones</MudTh>
+            <MudTh class="text-right">Éxito</MudTh>
+            <MudTh class="text-right">Confianza</MudTh>
+            <MudTh class="text-right">Latencia</MudTh>
+            <MudTh>Última fuente</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Sitio">@context.SiteName</MudTd>
+            <MudTd DataLabel="Extracciones" Class="text-right">@context.Total</MudTd>
+            <MudTd DataLabel="Éxito" Class="text-right">
+                <MudChip T="string" Size="Size.Small" Color="@(context.SuccessRate >= 90 ? Color.Success : Color.Warning)">@context.SuccessRate.ToString("N1")%</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Confianza" Class="text-right">@context.AverageConfidence.ToString("N0")%</MudTd>
+            <MudTd DataLabel="Latencia" Class="text-right">@context.AverageLatency.ToString("N0") ms</MudTd>
+            <MudTd DataLabel="Última fuente">@context.LastSource</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-6 d-block text-center text-muted">Aún no hay métricas de extracción registradas.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private bool _loading = true;
+    private int _totalExtractions;
+    private double _successRate;
+    private double _averageLatency;
+    private List<SiteMetric> _siteMetrics = [];
+
+    private Color SuccessColor => _successRate >= 90 ? Color.Success : Color.Warning;
+
+    protected override Task OnInitializedAsync() => LoadMetricsAsync();
+
+    private async Task LoadMetricsAsync()
+    {
+        _loading = true;
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var cutoff = DateTime.UtcNow.AddDays(-30);
+        var metrics = await context.RegistroMetricasExtraccion
+            .Where(metric => metric.FechaRegistro >= cutoff)
+            .Join(context.CatalogoSitios, metric => metric.CatalogoSitioId, site => site.Id,
+                (metric, site) => new { Metric = metric, SiteName = site.Nombre })
+            .ToListAsync();
+
+        _totalExtractions = metrics.Count;
+        _successRate = metrics.Count == 0 ? 0 : metrics.Count(metric => metric.Metric.Exitoso) * 100d / metrics.Count;
+        _averageLatency = metrics.Count == 0 ? 0 : metrics.Average(metric => metric.Metric.LatenciaMs);
+        _siteMetrics = metrics
+            .GroupBy(metric => metric.SiteName)
+            .Select(group => new SiteMetric(
+                group.Key,
+                group.Count(),
+                group.Count(metric => metric.Metric.Exitoso) * 100d / group.Count(),
+                group.Where(metric => metric.Metric.Exitoso).Select(metric => metric.Metric.ConfianzaPrecio).DefaultIfEmpty().Average(),
+                group.Average(metric => metric.Metric.LatenciaMs),
+                group.OrderByDescending(metric => metric.Metric.FechaRegistro).Select(metric => metric.Metric.FuentePrecio ?? "Selector configurado").First()))
+            .OrderByDescending(metric => metric.Total)
+            .ToList();
+        _loading = false;
+    }
+
+    private sealed record SiteMetric(string SiteName, int Total, double SuccessRate, double AverageConfidence, double AverageLatency, string LastSource);
+}

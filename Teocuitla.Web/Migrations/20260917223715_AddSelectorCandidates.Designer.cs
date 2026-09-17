@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Teocuitla.Shared.Data;
 
@@ -11,9 +12,11 @@ using Teocuitla.Shared.Data;
 namespace Teocuitla.Web.Migrations
 {
     [DbContext(typeof(TeocuitlaDbContext))]
-    partial class TeocuitlaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917223715_AddSelectorCandidates")]
+    partial class AddSelectorCandidates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -197,48 +200,6 @@ namespace Teocuitla.Web.Migrations
                     b.HasIndex("VarianteComercialId");
 
                     b.ToTable("Registro_Fallas_Scraping");
-                });
-
-            modelBuilder.Entity("Teocuitla.Shared.Models.RegistroMetricaExtraccion", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("CatalogoSitioId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ConfianzaPrecio")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("Exitoso")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("FechaRegistro")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("FuentePrecio")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("LatenciaMs")
-                        .HasColumnType("int");
-
-                    b.Property<string>("MetodoDeteccion")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("VarianteComercialId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CatalogoSitioId", "FechaRegistro")
-                        .HasDatabaseName("IX_MetricasExtraccion_Sitio_Fecha");
-
-                    b.ToTable("Registro_Metricas_Extraccion");
                 });
 
             modelBuilder.Entity("Teocuitla.Shared.Models.RegistroProxy", b =>

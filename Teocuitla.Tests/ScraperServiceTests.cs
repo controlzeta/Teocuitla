@@ -64,6 +64,25 @@ namespace Teocuitla.Tests
             Assert.NotNull(_scraperService);
         }
 
+        [Fact]
+        public void IsLearnedSelectorValid_WithOneMatchingPrice_ReturnsTrue()
+        {
+            var html = "<main><span class='price'>$1,249.00</span></main>";
+
+            Assert.True(ScraperService.IsLearnedSelectorValid(html, "//span[@class='price']", 1249m));
+        }
+
+        [Theory]
+        [InlineData("//span[@class='price']", 1200)]
+        [InlineData("//span", 1249)]
+        [InlineData("//span[@class='missing']", 1249)]
+        public void IsLearnedSelectorValid_WithoutOneMatchingPrice_ReturnsFalse(string xpath, decimal expectedPrice)
+        {
+            var html = "<main><span class='price'>$1,249.00</span><span class='price'>$1,249.00</span></main>";
+
+            Assert.False(ScraperService.IsLearnedSelectorValid(html, xpath, expectedPrice));
+        }
+
         [Theory]
         [InlineData("//div[@id='price']", true)]
         [InlineData("/html/body/div[1]", true)]

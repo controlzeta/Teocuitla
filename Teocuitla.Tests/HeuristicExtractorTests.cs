@@ -44,6 +44,10 @@ namespace Teocuitla.Tests
             Assert.Equal(1249.99m, result.Precio);
             Assert.True(result.EnStock);
             Assert.Equal("JSON-LD (Datos Estructurados)", result.MetodoDeteccion);
+            Assert.Equal("JSON-LD", result.FuentePrecio);
+            Assert.Equal("1249.99", result.PrecioTextoBruto);
+            Assert.Equal("MXN", result.Moneda);
+            Assert.Equal(100, result.ConfianzaPrecio);
         }
 
         [Fact]
@@ -96,6 +100,110 @@ namespace Teocuitla.Tests
             Assert.Equal(649.00m, result.Precio);
             Assert.False(result.EnStock);
             Assert.Equal("Analisis Semantico DOM (Fallback)", result.MetodoDeteccion);
+            Assert.Equal("DOM semántico", result.FuentePrecio);
+            Assert.Equal(50, result.ConfianzaPrecio);
+            Assert.NotEmpty(result.XPathPrecio);
+        }
+
+        [Fact]
+        public void Extract_WithJsonLdGraph_SelectsTheAvailableDirectOffer()
+        {
+            var html = @"
+                <script type='application/ld+json'>
+                {
+                    ""@graph"": [{
+                        ""@type"": [""Product"", ""IndividualProduct""],
+                        ""name"": ""Proteína de prueba"",
+                        ""offers"": [
+                            { ""price"": ""999.00"", ""priceCurrency"": ""MXN"", ""availability"": ""https://schema.org/OutOfStock"" },
+                            { ""price"": ""799.00"", ""priceCurrency"": ""MXN"", ""availability"": ""https://schema.org/InStock"" }
+                        ]
+                    }]
+                }
+                </script>";
+
+            var result = HeuristicExtractor.Extract(html);
+
+            Assert.Equal("Proteína de prueba", result.Nombre);
+            Assert.Equal(799m, result.Precio);
+            Assert.True(result.EnStock);
+            Assert.Equal("MXN", result.Moneda);
+            Assert.Equal("JSON-LD", result.FuentePrecio);
+        }
+
+        [Fact]
+        public void Extract_WithJsonLdVariants_ExtractsTheProductVariant()
+        {
+            var html = @"
+                <script type='application/ld+json'>
+                {
+                    ""@type"": ""ProductGroup"",
+                    ""hasVariant"": [{
+                        ""@type"": ""Product"",
+                        ""name"": ""Producto talla mediana"",
+                        ""offers"": { ""lowPrice"": ""699.00"", ""priceCurrency"": ""MXN"", ""availability"": ""https://schema.org/InStock"" }
+                    }]
+                }
+                </script>";
+
+            var result = HeuristicExtractor.Extract(html);
+
+            Assert.Equal("Producto talla mediana", result.Nombre);
+            Assert.Equal(699m, result.Precio);
+            Assert.Equal("JSON-LD (Precio mínimo)", result.FuentePrecio);
+        }
+
+        [Fact]
+        public void Extract_WithMultipleDomPrices_SelectsCurrentPriceInProductScope()
+        {
+            var html = @"
+                <html><body>
+                    <main class='product-detail'>
+                        <h1>Producto de prueba</h1>
+                        <span class='old-price'>$1,599.00</span>
+                        <span class='monthly-price'>$99.00 al mes</span>
+                        <span class='sale-price'>$1,249.00</span>
+                    </main>
+                    <section class='related-products'><span class='sale-price'>$1.00</span></section>
+                </body></html>";
+
+            var result = HeuristicExtractor.Extract(html);
+
+            Assert.Equal(1249m, result.Precio);
+            Assert.Equal("DOM semántico", result.FuentePrecio);
+        }
+
+        [Fact]
+        public void Extract_WithOutOfStockRelatedContent_DoesNotMarkProductOutOfStock()
+        {
+            var html = @"
+                <html>
+                <body>
+                    <main>
+                        <h1>Producto disponible</h1>
+                        <div class='product-price'>$9999</div>
+                        <div class='availability'>Disponible</div>
+                    </main>
+                    <aside>Producto relacionado agotado</aside>
+                </body>
+                </html>";
+
+            var result = HeuristicExtractor.Extract(html);
+
+            Assert.Equal(9999m, result.Precio);
+            Assert.True(result.EnStock);
+        }
+
+        [Fact]
+        public void Extract_WithRepeatedHtml_ReturnsAnIndependentCachedResult()
+        {
+            const string html = "<main><h1>Producto</h1><span class='sale-price'>$999.00</span></main>";
+
+            var firstResult = HeuristicExtractor.Extract(html);
+            firstResult.Precio = 1m;
+            var cachedResult = HeuristicExtractor.Extract(html);
+
+            Assert.Equal(999m, cachedResult.Precio);
         }
 
         [Fact]

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Xml.XPath;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using OpenQA.Selenium;
@@ -27,6 +28,10 @@ namespace Teocuitla.Worker.Services
         public string? HtmlFallido { get; set; }
         public string? ErrorMensaje { get; set; }
         public string? LearnedSelector { get; set; }
+        public bool LearnedSelectorValidated { get; set; }
+        public string? MetodoDeteccion { get; set; }
+        public string? FuentePrecio { get; set; }
+        public int ConfianzaPrecio { get; set; }
         public string? RecommendedStrategy { get; set; }
         public string? ImagenUrl { get; set; }
     }
@@ -186,8 +191,8 @@ namespace Teocuitla.Worker.Services
                     var heuristic = HeuristicExtractor.Extract(htmlToParse);
                     if (heuristic.Precio.HasValue && heuristic.Precio.Value > 0)
                     {
-                        _logger.LogInformation("[HEURISTIC SUCCESS] Datos recuperados via {Metodo}: Precio: ${Precio}, Stock: {Stock}", 
-                            heuristic.MetodoDeteccion, heuristic.Precio, heuristic.EnStock);
+                        _logger.LogInformation("[HEURISTIC SUCCESS] Datos recuperados via {Metodo}/{Fuente} (confianza {Confianza}): Precio: ${Precio}, Stock: {Stock}",
+                            heuristic.MetodoDeteccion, heuristic.FuentePrecio, heuristic.ConfianzaPrecio, heuristic.Precio, heuristic.EnStock);
                         
                         // Si la heurística lo rescató, evaluar si de todas formas se detectó un antibot en el HTML
                         string? pageTitle = null;
@@ -210,6 +215,14 @@ namespace Teocuitla.Worker.Services
                         }
 
                         stopwatch.Stop();
+                        var learnedSelector = heuristic.XPathSugerido;
+                        var learnedSelectorValidated = IsLearnedSelectorValid(htmlToParse, learnedSelector, heuristic.Precio.Value);
+                        if (!string.IsNullOrEmpty(learnedSelector) && !learnedSelectorValidated)
+                        {
+                            _logger.LogWarning("Se descartó el selector candidato para {Nombre}: no identifica un único precio esperado.", variante.Nombre);
+                            learnedSelector = null;
+                        }
+
                         return new ScraperResult
                         {
                             Exitoso = true,
@@ -217,7 +230,11 @@ namespace Teocuitla.Worker.Services
                             EnStock = heuristic.EnStock,
                             LatenciaMs = (int)stopwatch.ElapsedMilliseconds,
                             ErrorMensaje = $"Extraido via heuristica ({heuristic.MetodoDeteccion})",
-                            LearnedSelector = heuristic.XPathSugerido, // Pasar el selector aprendido
+                            LearnedSelector = learnedSelector,
+                            LearnedSelectorValidated = learnedSelectorValidated,
+                            MetodoDeteccion = heuristic.MetodoDeteccion,
+                            FuentePrecio = heuristic.FuentePrecio,
+                            ConfianzaPrecio = heuristic.ConfianzaPrecio,
                             RecommendedStrategy = recommendedStrategy,
                             ImagenUrl = !string.IsNullOrEmpty(heuristic.ImagenUrl) ? MakeAbsoluteUrl(heuristic.ImagenUrl, sitio.UrlBase) : null
                         };
@@ -678,54 +695,31 @@ namespace Teocuitla.Worker.Services
 
         public static decimal? ParsePrice(string? input)
         {
-            if (string.IsNullOrWhiteSpace(input)) return null;
+            return PriceParser.Parse(input)?.Price;
+        }
+
+        public static bool IsLearnedSelectorValid(string html, string? xpathSelector, decimal expectedPrice)
+        {
+            if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(xpathSelector) ||
+                !SelectorValidator.IsValidXPath(xpathSelector))
+            {
+                return false;
+            }
 
             try
             {
-                // Extraer solo números, comas y puntos
-                var clean = Regex.Replace(input, @"[^\d.,]", "").Trim();
+                var document = new HtmlDocument();
+                document.LoadHtml(html);
+                var nodes = document.DocumentNode.SelectNodes(xpathSelector);
+                if (nodes == null || nodes.Count != 1) return false;
 
-                if (string.IsNullOrEmpty(clean)) return null;
-
-                // Si contiene comas y puntos, determinamos cuál es el decimal basándonos en cuál aparece al final
-                if (clean.Contains(",") && clean.Contains("."))
-                {
-                    if (clean.LastIndexOf('.') > clean.LastIndexOf(','))
-                    {
-                        // El punto está al final (ej: 1,250.75), la coma es separador de miles
-                        clean = clean.Replace(",", "");
-                    }
-                    else
-                    {
-                        // La coma está al final (ej: 1.250,75), el punto es separador de miles
-                        clean = clean.Replace(".", "").Replace(",", ".");
-                    }
-                }
-                else if (clean.Contains(",") && !clean.Contains("."))
-                {
-                    // Podría ser decimal con coma (Ej: "1299,00") o miles con coma (Ej: "1,299")
-                    var parts = clean.Split(',');
-                    if (parts.Length == 2 && parts[1].Length == 2)
-                    {
-                        clean = clean.Replace(",", "."); // Convertir a decimal estándar
-                    }
-                    else
-                    {
-                        clean = clean.Replace(",", ""); // Quitar miles
-                    }
-                }
-
-                if (decimal.TryParse(clean, NumberStyles.Any, CultureInfo.InvariantCulture, out var price))
-                {
-                    return price;
-                }
+                var parsedPrice = PriceParser.Parse(nodes[0].InnerText);
+                return parsedPrice?.Price == expectedPrice;
             }
-            catch
+            catch (XPathException)
             {
-                // Ignorar fallos de expresión regular o formateo
+                return false;
             }
-
-            return null;
         }
 
 

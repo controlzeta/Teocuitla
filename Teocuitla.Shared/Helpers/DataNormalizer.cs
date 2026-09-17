@@ -7,7 +7,6 @@ namespace Teocuitla.Shared.Helpers
 {
     public static class DataNormalizer
     {
-        private static readonly Regex PriceCleanRegex = new Regex(@"[^\d.,]", RegexOptions.Compiled);
         private static readonly Regex MultiSpaceRegex = new Regex(@"\s+", RegexOptions.Compiled);
         private static readonly Regex TrailingGarbageRegex = new Regex(@"\s*[-|•/]+(?:\s+[-|•/]+)*\s*$", RegexOptions.Compiled);
 
@@ -60,45 +59,7 @@ namespace Teocuitla.Shared.Helpers
 
         public static decimal? NormalizePrice(string? rawPrice)
         {
-            if (string.IsNullOrWhiteSpace(rawPrice)) return null;
-
-            try
-            {
-                var clean = PriceCleanRegex.Replace(rawPrice, "").Trim();
-                if (string.IsNullOrEmpty(clean)) return null;
-
-                if (clean.Contains(",") && clean.Contains("."))
-                {
-                    if (clean.LastIndexOf('.') > clean.LastIndexOf(','))
-                    {
-                        clean = clean.Replace(",", "");
-                    }
-                    else
-                    {
-                        clean = clean.Replace(".", "").Replace(",", ".");
-                    }
-                }
-                else if (clean.Contains(",") && !clean.Contains("."))
-                {
-                    var parts = clean.Split(',');
-                    if (parts.Length == 2 && parts[1].Length == 2)
-                    {
-                        clean = clean.Replace(",", ".");
-                    }
-                    else
-                    {
-                        clean = clean.Replace(",", "");
-                    }
-                }
-
-                if (decimal.TryParse(clean, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var price))
-                {
-                    return price;
-                }
-            }
-            catch { /* ignore */ }
-
-            return null;
+            return PriceParser.Parse(rawPrice)?.Price;
         }
 
         public static decimal? NormalizePriceNode(HtmlNode priceNode)

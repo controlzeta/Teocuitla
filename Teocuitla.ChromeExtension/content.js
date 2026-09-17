@@ -589,11 +589,38 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', extractProductData);
 }
 
+function saveHtmlSnapshot() {
+  const htmlContent = document.documentElement.outerHTML;
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const domain = window.location.hostname.replace(/^www\./i, '') || 'pagina';
+  const timestamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+  const fileName = `${domain}_${timestamp}.html`;
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = fileName;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  return fileName;
+}
+
 // Escuchar solicitudes de extracción manual y notificaciones de ingesta
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'manualExtract') {
     extractProductData();
     sendResponse({ success: true, message: 'Extracción manual gatillada.' });
+  } else if (request.action === 'saveHtmlSnapshot') {
+    try {
+      sendResponse({ success: true, fileName: saveHtmlSnapshot() });
+    } catch (error) {
+      console.error('[Teocuitla] Error al guardar la instantánea HTML:', error);
+      sendResponse({ success: false, message: 'No se pudo capturar el HTML de la página.' });
+    }
   } else if (request.action === 'showIngestNotification') {
     showNonInvasiveNotification(request);
   }
@@ -783,5 +810,4 @@ function playCashRegisterSound() {
     console.warn('[Teocuitla] No se pudo reproducir el sonido de caja registradora:', err);
   }
 }
-
 

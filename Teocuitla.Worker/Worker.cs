@@ -187,13 +187,13 @@ namespace Teocuitla.Worker
                         {
                             // Ejecutar el scraping (ligero o pesado según configuración)
                             var scrapResult = await _scraperService.ScrapeAsync(variante, variante.CatalogoSitio!, proxy);
+                            await RegisterExtractionMetricAsync(variante, scrapResult);
 
                              if (scrapResult.Exitoso)
                             {
-                                // Si se aprendio un nuevo selector de forma heuristica, guardarlo en BD
-                                if (!string.IsNullOrEmpty(scrapResult.LearnedSelector))
+                                if (!string.IsNullOrEmpty(scrapResult.LearnedSelector) && scrapResult.LearnedSelectorValidated)
                                 {
-                                    await UpdateSiteSelectorAsync(variante.CatalogoSitioId, scrapResult.LearnedSelector);
+                                    await RegisterSelectorCandidateAsync(variante, scrapResult);
                                 }
 
                                 // Si se aprendió una nueva estrategia de evasión, guardarla en BD
@@ -399,24 +399,77 @@ namespace Teocuitla.Worker
             }
         }
 
-        private async Task UpdateSiteSelectorAsync(int sitioId, string xpathSelector)
+        private async Task RegisterSelectorCandidateAsync(VarianteComercial variante, ScraperResult scrapResult)
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
-                
-                var sitio = await context.CatalogoSitios.FindAsync(sitioId);
-                if (sitio != null)
+
+                var xpathSelector = scrapResult.LearnedSelector!;
+                var alreadyValidated = await context.SelectoresCandidatos.AnyAsync(candidate =>
+                    candidate.CatalogoSitioId == variante.CatalogoSitioId &&
+                    candidate.XPath == xpathSelector &&
+                    candidate.VarianteComercialId == variante.Id);
+
+                if (!alreadyValidated)
+                {
+                    context.SelectoresCandidatos.Add(new SelectorCandidato
+                    {
+                        CatalogoSitioId = variante.CatalogoSitioId,
+                        VarianteComercialId = variante.Id,
+                        XPath = xpathSelector,
+                        PrecioVerificado = scrapResult.Precio,
+                        UrlProducto = variante.UrlProducto
+                    });
+                    await context.SaveChangesAsync();
+                    _logger.LogInformation("[LEARNING CANDIDATE] Selector {Selector} validado para variante {VarianteId}.", xpathSelector, variante.Id);
+                }
+
+                const int promotionThreshold = 3;
+                var validationCount = await context.SelectoresCandidatos
+                    .Where(candidate => candidate.CatalogoSitioId == variante.CatalogoSitioId && candidate.XPath == xpathSelector)
+                    .Select(candidate => candidate.VarianteComercialId)
+                    .Distinct()
+                    .CountAsync();
+
+                if (validationCount < promotionThreshold) return;
+
+                var sitio = await context.CatalogoSitios.FindAsync(variante.CatalogoSitioId);
+                if (sitio != null && sitio.SelectorPrecioXPath != xpathSelector)
                 {
                     sitio.SelectorPrecioXPath = xpathSelector;
                     await context.SaveChangesAsync();
-                    _logger.LogInformation("[LEARNING SUCCESS] Se guardo en la base de datos el nuevo selector aprendido para el sitio '{Nombre}': {Selector}", sitio.Nombre, xpathSelector);
+                    _logger.LogInformation("[LEARNING PROMOTED] El selector {Selector} se promovió para el sitio '{Nombre}' tras {ValidationCount} validaciones.", xpathSelector, sitio.Nombre, validationCount);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al guardar el selector aprendido para el sitio {SitioId}.", sitioId);
+                _logger.LogError(ex, "Error al registrar el selector candidato para el sitio {SitioId}.", variante.CatalogoSitioId);
+            }
+        }
+
+        private async Task RegisterExtractionMetricAsync(VarianteComercial variante, ScraperResult scrapResult)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TeocuitlaDbContext>();
+                context.RegistroMetricasExtraccion.Add(new RegistroMetricaExtraccion
+                {
+                    CatalogoSitioId = variante.CatalogoSitioId,
+                    VarianteComercialId = variante.Id,
+                    Exitoso = scrapResult.Exitoso,
+                    MetodoDeteccion = scrapResult.MetodoDeteccion,
+                    FuentePrecio = scrapResult.FuentePrecio,
+                    ConfianzaPrecio = scrapResult.ConfianzaPrecio,
+                    LatenciaMs = scrapResult.LatenciaMs
+                });
+                await context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al registrar la métrica de extracción para la variante {VarianteId}.", variante.Id);
             }
         }
 
