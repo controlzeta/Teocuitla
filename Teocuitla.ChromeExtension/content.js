@@ -109,7 +109,13 @@ function isPageOutOfStock() {
   return false;
 }
 
-function extractProductData() {
+async function extractProductData() {
+  const { scrapingEnabled = true } = await chrome.storage.local.get('scrapingEnabled');
+  if (!scrapingEnabled) {
+    console.info('[Teocuitla] Captura de precios desactivada para navegación privada.');
+    return false;
+  }
+
   const extractionStartedAt = performance.now();
   let url = window.location.href;
   let domain = window.location.hostname.replace('www.', '');
@@ -186,6 +192,8 @@ function extractProductData() {
 
     extractWithSharedHeuristic(url, domain, extractionStartedAt);
   });
+
+  return true;
 }
 
 function extractWithSharedHeuristic(url, domain, extractionStartedAt) {
@@ -498,7 +506,13 @@ function executeHardcodedOrGenericExtraction(url, domain, extractionStartedAt = 
   }
 }
 
-function sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, nombreXPath, precioXPath, imagenXPath, extractionMetadata = {}) {
+async function sendPayload(sku, nombre, url, precio, imagenUrl, domain, marca, nombreXPath, precioXPath, imagenXPath, extractionMetadata = {}) {
+  const { scrapingEnabled = true } = await chrome.storage.local.get('scrapingEnabled');
+  if (!scrapingEnabled) {
+    console.info('[Teocuitla] Ingesta cancelada porque la captura está desactivada.');
+    return;
+  }
+
   if (imagenUrl && imagenUrl.startsWith('/')) {
     imagenUrl = window.location.origin + imagenUrl;
   }
@@ -684,8 +698,17 @@ function saveHtmlSnapshot() {
 // Escuchar solicitudes de extracción manual y notificaciones de ingesta
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'manualExtract') {
-    extractProductData();
-    sendResponse({ success: true, message: 'Extracción manual gatillada.' });
+    extractProductData()
+      .then(scrapingEnabled => sendResponse(
+        scrapingEnabled
+          ? { success: true, message: 'Extracción manual gatillada.' }
+          : { success: false, message: 'La captura está desactivada para navegación privada.' }
+      ))
+      .catch(error => {
+        console.error('[Teocuitla] Error al iniciar la extracción manual:', error);
+        sendResponse({ success: false, message: 'No se pudo iniciar la extracción manual.' });
+      });
+    return true;
   } else if (request.action === 'saveHtmlSnapshot') {
     try {
       sendResponse({ success: true, fileName: saveHtmlSnapshot() });
