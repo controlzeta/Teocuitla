@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSave = document.getElementById('btnSave');
   const btnExtract = document.getElementById('btnExtract');
   const btnSaveHtml = document.getElementById('btnSaveHtml');
+  const scrapingEnabledInput = document.getElementById('scrapingEnabled');
   const btnReload = document.getElementById('btnReload');
   const btnRefresh = document.getElementById('btnRefresh');
   const btnOpenAll = document.getElementById('btnOpenAll');
@@ -36,13 +37,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 1. Cargar configuración previa
-  chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+  chrome.storage.local.get(['apiUrl', 'apiKey', 'scrapingEnabled'], (config) => {
     if (config.apiUrl) {
       apiUrlInput.value = config.apiUrl;
     }
     if (config.apiKey) {
       apiKeyInput.value = config.apiKey;
     }
+    const scrapingEnabled = config.scrapingEnabled !== false;
+    scrapingEnabledInput.checked = scrapingEnabled;
+    btnExtract.disabled = !scrapingEnabled;
+  });
+
+  scrapingEnabledInput.addEventListener('change', () => {
+    const scrapingEnabled = scrapingEnabledInput.checked;
+    btnExtract.disabled = !scrapingEnabled;
+    chrome.storage.local.set({ scrapingEnabled }, () => {
+      updateStatus(
+        scrapingEnabled
+          ? 'Captura de precios activada.'
+          : 'Modo privado activado: no se enviarán ni guardarán precios.',
+        scrapingEnabled ? 'success' : ''
+      );
+    });
   });
 
   // 2. Guardar configuración
@@ -62,6 +79,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 3. Forzar Extracción Manual en pestaña activa
   btnExtract.addEventListener('click', async () => {
+    if (!scrapingEnabledInput.checked) {
+      updateStatus('La captura está desactivada para navegación privada.', '');
+      return;
+    }
+
     updateStatus('Extrayendo datos de la página...', '');
     
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

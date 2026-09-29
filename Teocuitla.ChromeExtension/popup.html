@@ -292,6 +292,35 @@
     .status-error {
       color: #f87171;
     }
+    .privacy-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .privacy-toggle input {
+      width: auto;
+      accent-color: #38bdf8;
+    }
+    .privacy-toggle-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .privacy-toggle-title {
+      color: #f1f3f9;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .privacy-toggle-description {
+      color: #94a3b8;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
@@ -311,6 +340,14 @@
 
   <!-- Content: Configuration -->
   <div id="configContent" class="tab-content active">
+    <label class="privacy-toggle" for="scrapingEnabled">
+      <input type="checkbox" id="scrapingEnabled" checked />
+      <span class="privacy-toggle-text">
+        <span class="privacy-toggle-title">Captura de precios activa</span>
+        <span class="privacy-toggle-description">Desactívala para navegar sin enviar ni guardar precios.</span>
+      </span>
+    </label>
+
     <div class="form-group">
       <label for="apiUrl">URL del Servidor</label>
       <input type="text" id="apiUrl" placeholder="https://localhost:7192" />
