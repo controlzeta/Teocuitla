@@ -13,6 +13,11 @@
       color: #f1f3f9;
       box-sizing: border-box;
     }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
     h2 {
       font-size: 18px;
       font-weight: 700;
@@ -303,9 +308,41 @@
       border-radius: 6px;
       cursor: pointer;
     }
-    .privacy-toggle input {
-      width: auto;
-      accent-color: #38bdf8;
+    .privacy-toggle-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+    .privacy-switch {
+      position: relative;
+      flex: 0 0 auto;
+      width: 36px;
+      height: 20px;
+      background-color: #475569;
+      border-radius: 9999px;
+      transition: background-color 0.2s ease;
+    }
+    .privacy-switch::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      top: 3px;
+      left: 3px;
+      background-color: #ffffff;
+      border-radius: 50%;
+      transition: transform 0.2s ease;
+    }
+    .privacy-toggle-input:checked + .privacy-switch {
+      background-color: #0284c7;
+    }
+    .privacy-toggle-input:checked + .privacy-switch::after {
+      transform: translateX(16px);
+    }
+    .privacy-toggle-input:focus-visible + .privacy-switch {
+      outline: 2px solid #38bdf8;
+      outline-offset: 2px;
     }
     .privacy-toggle-text {
       display: flex;
@@ -341,7 +378,8 @@
   <!-- Content: Configuration -->
   <div id="configContent" class="tab-content active">
     <label class="privacy-toggle" for="scrapingEnabled">
-      <input type="checkbox" id="scrapingEnabled" checked />
+      <input class="privacy-toggle-input" type="checkbox" id="scrapingEnabled" checked />
+      <span class="privacy-switch" aria-hidden="true"></span>
       <span class="privacy-toggle-text">
         <span class="privacy-toggle-title">Captura de precios activa</span>
         <span class="privacy-toggle-description">Desactívala para navegar sin enviar ni guardar precios.</span>

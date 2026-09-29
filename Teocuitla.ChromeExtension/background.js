@@ -53,7 +53,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'ingestProduct') {
     const productData = message.data;
 
-    chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+    chrome.storage.local.get(['apiUrl', 'apiKey', 'scrapingEnabled'], (config) => {
+      if (config.scrapingEnabled === false) {
+        console.info('[Teocuitla] Ingesta bloqueada porque el modo privado está activo.');
+        chrome.runtime.sendMessage({
+          action: 'ingestStatus',
+          success: false,
+          message: 'Modo privado activo: la ingesta fue bloqueada.'
+        }).catch(() => {});
+        return;
+      }
+
       const apiUrl = config.apiUrl || 'https://localhost:7192';
       const apiKey = config.apiKey || 'TeocuitlaDefaultApiKeySecret';
 
@@ -134,7 +144,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'extractWithSharedHeuristic') {
     const extractionRequest = message.data;
 
-    chrome.storage.local.get(['apiUrl', 'apiKey'], (config) => {
+    chrome.storage.local.get(['apiUrl', 'apiKey', 'scrapingEnabled'], (config) => {
+      if (config.scrapingEnabled === false) {
+        sendResponse({ success: false, message: 'Modo privado activo: la extracción remota fue bloqueada.' });
+        return;
+      }
+
       const apiUrl = config.apiUrl || 'https://localhost:7192';
       const apiKey = config.apiKey || 'TeocuitlaDefaultApiKeySecret';
       const endpoint = `${apiUrl.replace(/\/$/, '')}/api/ingestion/extension/extract`;
